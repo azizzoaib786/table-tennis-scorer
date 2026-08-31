@@ -201,7 +201,7 @@ or wherever azizzoaib.com is hosted).
 bash deploy.sh
 ```
 
-The script installs Python + Nginx + certbot, creates a `tabletennisscorer.service`
+The script installs Python + Nginx + certbot, creates a `table-tennis-scorer.service`
 systemd unit, writes an Nginx vhost for `tabletennis.azizzoaib.com`, requests a
 Let's Encrypt cert (auto-redirects HTTP → HTTPS), and provisions the DynamoDB
 tables. It coexists with `iquitscorer.service` — different port (`8002` vs

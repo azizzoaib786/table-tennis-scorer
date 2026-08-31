@@ -1,6 +1,6 @@
 #!/bin/bash
 # =============================================================================
-# tabletennisscorer — EC2 deploy / redeploy script
+# table-tennis-scorer — EC2 deploy / redeploy script
 # Deploys FastAPI app at https://tabletennis.azizzoaib.com
 # Idempotent — safe to re-run.
 #
@@ -13,11 +13,11 @@
 set -euo pipefail
 
 # ── Config ───────────────────────────────────────────────────────────────────
-APP_DIR="/home/ec2-user/tabletennisscorer"
+APP_DIR="/home/ec2-user/table-tennis-scorer"
 APP_USER="ec2-user"
-SERVICE_NAME="tabletennisscorer"
+SERVICE_NAME="table-tennis-scorer"
 APP_PORT="8002"
-REPO_URL="${REPO_URL:-git@github.com:azizzoaib786/tabletennisscorer.git}"
+REPO_URL="${REPO_URL:-git@github.com:azizzoaib786/table-tennis-scorer.git}"
 
 DOMAIN="tabletennis.azizzoaib.com"
 CERTBOT_EMAIL="aziz@azizzoaib.com"
@@ -31,7 +31,7 @@ SETTINGS_TABLE="tt_settings"
 ROSTER_TABLE="tt_roster"
 
 # SECRET_KEY + optional TT_ADMIN_PASSWORD persist across deploys.
-SECRET_FILE="/etc/tabletennisscorer.env"
+SECRET_FILE="/etc/table-tennis-scorer.env"
 # ─────────────────────────────────────────────────────────────────────────────
 
 echo "▶ [1/7] Sanity check tools..."
@@ -135,7 +135,7 @@ sudo -u "$APP_USER" \
     "$APP_DIR/.venv/bin/python" "$APP_DIR/setup_db.py" || true
 
 echo ""
-echo "✅ tabletennisscorer deployed."
+echo "✅ table-tennis-scorer deployed."
 echo "   Live at:  https://${DOMAIN}"
 echo "   Logs:     sudo journalctl -u ${SERVICE_NAME} -f"
 echo "   Restart:  sudo systemctl restart ${SERVICE_NAME}"

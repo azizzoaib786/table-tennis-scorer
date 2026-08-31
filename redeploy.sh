@@ -1,15 +1,15 @@
 #!/bin/bash
 # =============================================================================
-# tabletennisscorer — Redeploy script (pull latest + restart)
+# table-tennis-scorer — Redeploy script (pull latest + restart)
 # Usage: bash redeploy.sh
 # Fast path for code updates — does NOT touch nginx, certbot, or systemd unit.
 # Use deploy.sh for full first-time setup.
 # =============================================================================
 set -euo pipefail
 
-APP_DIR="/home/ec2-user/tabletennisscorer"
-SERVICE_NAME="tabletennisscorer"
-REPO_URL="${REPO_URL:-git@github.com:azizzoaib786/tabletennisscorer.git}"
+APP_DIR="/home/ec2-user/table-tennis-scorer"
+SERVICE_NAME="table-tennis-scorer"
+REPO_URL="${REPO_URL:-git@github.com:azizzoaib786/table-tennis-scorer.git}"
 
 echo "▶ Pulling latest changes..."
 current_url=$(git -C "$APP_DIR" remote get-url origin 2>/dev/null || echo "")
