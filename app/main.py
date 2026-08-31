@@ -1,0 +1,1254 @@
+import uuid
+from datetime import datetime, timezone
+from typing import Any, Dict, List, Optional
+
+from fastapi import FastAPI, Request, Form, HTTPException, Response
+from fastapi.responses import HTMLResponse, RedirectResponse, FileResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
+from fastapi.templating import Jinja2Templates
+
+from .db import (
+    put_match, get_match, list_matches, list_matches_by_user, update_match, delete_match,
+    put_event, list_events, delete_last_event,
+    create_user, get_user_by_username, get_user_by_id, get_user_by_email,
+    list_all_users, delete_user, update_user_password, toggle_user_active,
+    set_user_role, search_users, update_user_stats, set_user_must_change_password,
+    put_tournament, get_tournament, list_tournaments, list_tournaments_by_user,
+    update_tournament, delete_tournament,
+    get_settings, update_settings,
+    add_roster_player, list_roster, delete_roster_player, get_roster_player,
+)
+from .logic import compute_state, player_name
+from .auth import hash_password, verify_password, create_session_token, verify_session_token
+
+app = FastAPI(title="Table Tennis Scorer")
+templates = Jinja2Templates(directory="app/templates")
+app.mount("/static", StaticFiles(directory="app/static"), name="static")
+
+
+@app.get("/sw.js")
+async def service_worker():
+    return FileResponse(
+        "app/static/sw.js",
+        media_type="application/javascript",
+        headers={"Service-Worker-Allowed": "/"},
+    )
+
+
+@app.get("/favicon.ico")
+async def favicon():
+    return FileResponse("app/static/icons/icon-192.png", media_type="image/png")
+
+
+@app.exception_handler(404)
+async def not_found_handler(request: Request, exc: HTTPException):
+    return templates.TemplateResponse("404.html", {"request": request}, status_code=404)
+
+
+class ForcePasswordChange(Exception):
+    """Raised when an authenticated user must change their password before continuing."""
+
+
+@app.exception_handler(ForcePasswordChange)
+async def force_password_change_handler(request: Request, exc: ForcePasswordChange):
+    return RedirectResponse("/change-password?forced=1", status_code=303)
+
+
+# ── Helpers ────────────────────────────────────────────────────────────────────
+def now_ts() -> str:
+    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ") + "#" + uuid.uuid4().hex
+
+
+def get_current_user(request: Request) -> Optional[Dict[str, Any]]:
+    token = request.cookies.get("session")
+    if not token:
+        return None
+    user_id = verify_session_token(token)
+    if not user_id:
+        return None
+    return get_user_by_id(user_id)
+
+
+def require_auth(request: Request) -> Dict[str, Any]:
+    user = get_current_user(request)
+    if not user:
+        raise HTTPException(status_code=401, detail="Authentication required")
+    # If admin has forced a password reset, block every route except the change-password flow itself.
+    if user.get("must_change_password"):
+        path = request.url.path
+        if not (path.startswith("/change-password") or path == "/logout"):
+            raise ForcePasswordChange()
+    return user
+
+
+def require_admin(request: Request) -> Dict[str, Any]:
+    user = require_auth(request)
+    if not user.get("is_admin"):
+        raise HTTPException(status_code=403, detail="Admin access required")
+    return user
+
+
+def require_scorer(request: Request) -> Dict[str, Any]:
+    user = require_auth(request)
+    if user.get("role", "scorer") == "player" and not user.get("is_admin"):
+        raise HTTPException(status_code=403, detail="Scorer access required")
+    return user
+
+
+def must_match(match_id: str) -> Dict[str, Any]:
+    m = get_match(match_id)
+    if not m:
+        raise HTTPException(status_code=404, detail="Match not found")
+    return m
+
+
+def must_tournament(tournament_id: str) -> Dict[str, Any]:
+    t = get_tournament(tournament_id)
+    if not t:
+        raise HTTPException(status_code=404, detail="Tournament not found")
+    return t
+
+
+def check_match_access(request: Request, match_id: str):
+    user = require_auth(request)
+    match = must_match(match_id)
+    if not user.get("is_admin") and match.get("user_id") != user["user_id"]:
+        raise HTTPException(status_code=403, detail="Access denied")
+    return user, match
+
+
+def check_tournament_access(request: Request, tournament_id: str):
+    user = require_auth(request)
+    t = must_tournament(tournament_id)
+    if not user.get("is_admin") and t.get("user_id") != user["user_id"]:
+        raise HTTPException(status_code=403, detail="Access denied")
+    return user, t
+
+
+def match_context(request: Request, match: Dict[str, Any], user: Optional[Dict[str, Any]] = None,
+                  flash: Optional[str] = None) -> Dict[str, Any]:
+    ev = list_events(match["match_id"])
+    state = compute_state(match, ev)
+    return {
+        "request": request,
+        "user": user,
+        "match": match,
+        "state": state,
+        "flash": flash,
+    }
+
+
+# ── Auth ──────────────────────────────────────────────────────────────────────
+@app.get("/", response_class=HTMLResponse)
+def home(request: Request):
+    user = get_current_user(request)
+    if not user:
+        return RedirectResponse("/login", status_code=303)
+    if user.get("must_change_password"):
+        return RedirectResponse("/change-password?forced=1", status_code=303)
+    if user.get("role", "scorer") == "player" and not user.get("is_admin"):
+        return RedirectResponse(f"/profile/{user['user_id']}", status_code=303)
+
+    if user.get("is_admin"):
+        recent_matches = list_matches(limit=50)
+        recent_tournaments = list_tournaments(limit=20)
+    else:
+        recent_matches = list_matches_by_user(user["user_id"], limit=50)
+        recent_tournaments = list_tournaments_by_user(user["user_id"], limit=20)
+
+    return templates.TemplateResponse("home.html", {
+        "request": request,
+        "user": user,
+        "recent_matches": recent_matches,
+        "recent_tournaments": recent_tournaments,
+        "settings": get_settings(),
+    })
+
+
+@app.get("/login", response_class=HTMLResponse)
+def login_page(request: Request):
+    if get_current_user(request):
+        return RedirectResponse("/", status_code=303)
+    return templates.TemplateResponse("login.html", {"request": request})
+
+
+@app.post("/login")
+async def login(request: Request, username: str = Form(...), password: str = Form(...)):
+    user = get_user_by_username(username)
+    if not user or not verify_password(password, user["password_hash"]):
+        return templates.TemplateResponse("login.html", {
+            "request": request, "error": "Invalid credentials"
+        }, status_code=401)
+
+    if not user.get("is_active", True):
+        return templates.TemplateResponse("login.html", {
+            "request": request,
+            "error": "Your account has not been activated yet. Contact the admin."
+        }, status_code=403)
+
+    token = create_session_token(user["user_id"])
+    if user.get("must_change_password"):
+        redirect_to = "/change-password?forced=1"
+    elif user.get("role", "scorer") == "player" and not user.get("is_admin"):
+        redirect_to = f"/profile/{user['user_id']}"
+    else:
+        redirect_to = "/"
+    response = RedirectResponse(redirect_to, status_code=303)
+    response.set_cookie(key="session", value=token, httponly=True, max_age=86400 * 7)
+    return response
+
+
+@app.get("/register", response_class=HTMLResponse)
+def register_page(request: Request):
+    if get_current_user(request):
+        return RedirectResponse("/", status_code=303)
+    return templates.TemplateResponse("register.html", {"request": request})
+
+
+@app.post("/register")
+async def register(request: Request, username: str = Form(...), email: str = Form(...),
+                   password: str = Form(...), role: str = Form("scorer")):
+    if get_user_by_username(username):
+        return templates.TemplateResponse("register.html", {
+            "request": request, "error": "Username already exists"
+        }, status_code=400)
+    if get_user_by_email(email):
+        return templates.TemplateResponse("register.html", {
+            "request": request, "error": "Email already registered"
+        }, status_code=400)
+
+    if role not in ("scorer", "player"):
+        role = "scorer"
+
+    user_id = uuid.uuid4().hex
+    create_user(user_id, username, hash_password(password), is_admin=False, email=email, role=role)
+    # Players are auto-activated, scorers need admin approval
+    if role == "player":
+        toggle_user_active(user_id, True)
+        success_msg = "Player profile created — you can log in now."
+    else:
+        success_msg = "Scorer account created. Contact the admin to activate your account before logging in."
+
+    return templates.TemplateResponse("register.html", {
+        "request": request, "success": success_msg
+    })
+
+
+@app.get("/logout")
+def logout():
+    response = RedirectResponse("/login", status_code=303)
+    response.delete_cookie("session")
+    return response
+
+
+@app.get("/change-password", response_class=HTMLResponse)
+def change_password_page(request: Request, forced: int = 0):
+    user = require_auth(request)
+    return templates.TemplateResponse("change_password.html", {
+        "request": request, "user": user,
+        "forced": bool(forced) or bool(user.get("must_change_password")),
+    })
+
+
+@app.post("/change-password")
+def change_password(request: Request,
+                    current_password: str = Form(...),
+                    new_password: str = Form(...),
+                    confirm_password: str = Form(...)):
+    user = require_auth(request)
+    forced = bool(user.get("must_change_password"))
+    ctx = {"request": request, "user": user, "forced": forced}
+    if not verify_password(current_password, user["password_hash"]):
+        return templates.TemplateResponse("change_password.html", {**ctx, "error": "Current password is incorrect"})
+    if new_password != confirm_password:
+        return templates.TemplateResponse("change_password.html", {**ctx, "error": "New passwords do not match"})
+    if len(new_password) < 6:
+        return templates.TemplateResponse("change_password.html", {**ctx, "error": "Password must be at least 6 characters"})
+    if new_password == current_password:
+        return templates.TemplateResponse("change_password.html", {**ctx, "error": "New password must differ from the current one"})
+    update_user_password(user["user_id"], hash_password(new_password))
+    if forced:
+        set_user_must_change_password(user["user_id"], False)
+        # Send them home now that the wall is lifted.
+        return RedirectResponse("/", status_code=303)
+    return templates.TemplateResponse("change_password.html", {
+        **ctx, "forced": False, "success": "Password updated successfully!"
+    })
+
+
+# ── User search ───────────────────────────────────────────────────────────────
+@app.get("/users/search")
+def users_search(request: Request, q: str = "", exclude: str = ""):
+    require_auth(request)
+    if len(q) < 2:
+        return JSONResponse([])
+    exclude_ids = [e for e in exclude.split(",") if e]
+    return JSONResponse(search_users(q, exclude_ids=exclude_ids))
+
+
+# ── Profile ───────────────────────────────────────────────────────────────────
+@app.get("/profile/{user_id}", response_class=HTMLResponse)
+def profile_page(request: Request, user_id: str):
+    current_user = require_auth(request)
+    profile_user = get_user_by_id(user_id)
+    if not profile_user:
+        raise HTTPException(404, "User not found")
+    stats = {
+        "matches_played": int(profile_user.get("stat_matches_played", 0)),
+        "matches_won": int(profile_user.get("stat_matches_won", 0)),
+        "games_played": int(profile_user.get("stat_games_played", 0)),
+        "games_won": int(profile_user.get("stat_games_won", 0)),
+        "points_scored": int(profile_user.get("stat_points_scored", 0)),
+    }
+    stats["match_win_rate"] = round(stats["matches_won"] / stats["matches_played"] * 100) if stats["matches_played"] else 0
+    stats["game_win_rate"] = round(stats["games_won"] / stats["games_played"] * 100) if stats["games_played"] else 0
+    return templates.TemplateResponse("profile.html", {
+        "request": request,
+        "current_user": current_user,
+        "profile_user": profile_user,
+        "stats": stats,
+    })
+
+
+# ── Admin ─────────────────────────────────────────────────────────────────────
+@app.get("/admin", response_class=HTMLResponse)
+def admin_panel(request: Request):
+    admin = require_admin(request)
+    all_matches = list_matches(limit=200)
+    all_users = list_all_users()
+    all_tournaments = list_tournaments(limit=50)
+    return templates.TemplateResponse("admin.html", {
+        "request": request, "user": admin,
+        "settings": get_settings(),
+        "roster": list_roster(),
+    })
+
+
+@app.post("/admin/settings", response_class=HTMLResponse)
+async def admin_update_settings(request: Request,
+                                 default_best_of: int = Form(5),
+                                 default_points_to_win: int = Form(11),
+                                 service_interval: int = Form(2),
+                                 deuce_interval: int = Form(1),
+                                 default_match_type: str = Form("singles"),
+                                 deciding_side_change_at: int = Form(5)):
+    require_admin(request)
+    if default_best_of not in (1, 3, 5, 7):
+        raise HTTPException(400, "default_best_of must be 1, 3, 5, or 7")
+    if default_points_to_win < 5:
+        raise HTTPException(400, "default_points_to_win must be at least 5")
+    if service_interval < 1 or deuce_interval < 1:
+        raise HTTPException(400, "intervals must be at least 1")
+    if default_match_type not in ("singles", "doubles"):
+        raise HTTPException(400, "default_match_type must be 'singles' or 'doubles'")
+    if deciding_side_change_at < 0:
+        raise HTTPException(400, "deciding_side_change_at must be >= 0 (0 disables)")
+    update_settings({
+        "default_best_of": int(default_best_of),
+        "default_points_to_win": int(default_points_to_win),
+        "service_interval": int(service_interval),
+        "deuce_interval": int(deuce_interval),
+        "default_match_type": default_match_type,
+        "deciding_side_change_at": int(deciding_side_change_at),
+    })
+    return templates.TemplateResponse("partials/settings_form.html", {
+        "request": request,
+        "settings": get_settings(),
+        "flash": "✅ Settings saved. New matches will use these defaults.",
+    })
+
+
+@app.post("/admin/roster", response_class=HTMLResponse)
+async def admin_add_roster(request: Request, name: str = Form(...), user_id: str = Form("")):
+    require_admin(request)
+    nm = name.strip()
+    if not nm:
+        raise HTTPException(400, "Name required")
+    pid = uuid.uuid4().hex[:10]
+    add_roster_player(pid, nm, user_id=user_id.strip())
+    return templates.TemplateResponse("partials/roster.html", {
+        "request": request,
+        "roster": list_roster(),
+        "flash": f"✅ Added {nm} to roster",
+    })
+
+
+@app.delete("/admin/roster/{player_id}", response_class=HTMLResponse)
+async def admin_delete_roster(request: Request, player_id: str):
+    require_admin(request)
+    delete_roster_player(player_id)
+    return templates.TemplateResponse("partials/roster.html", {
+        "request": request,
+        "roster": list_roster(),
+    })
+
+
+@app.post("/admin/matches/{match_id}/delete")
+async def admin_delete_match(request: Request, match_id: str):
+    require_admin(request)
+    delete_match(match_id)
+    return HTMLResponse("", status_code=200)
+
+
+@app.post("/admin/tournaments/{tournament_id}/delete")
+async def admin_delete_tournament(request: Request, tournament_id: str):
+    require_admin(request)
+    delete_tournament(tournament_id)
+    return HTMLResponse("", status_code=200)
+
+
+@app.post("/admin/users/{user_id}/toggle-active")
+async def admin_toggle_user(request: Request, user_id: str):
+    require_admin(request)
+    target = get_user_by_id(user_id)
+    if not target:
+        raise HTTPException(404, "User not found")
+    if target.get("is_admin"):
+        raise HTTPException(400, "Cannot deactivate admin users")
+    toggle_user_active(user_id, not target.get("is_active", True))
+    return templates.TemplateResponse("partials/user_management.html", {
+        "request": request, "all_users": list_all_users()
+    })
+
+
+@app.post("/admin/users/{user_id}/make-scorer")
+async def admin_make_scorer(request: Request, user_id: str):
+    require_admin(request)
+    set_user_role(user_id, "scorer")
+    toggle_user_active(user_id, True)
+    return templates.TemplateResponse("partials/user_management.html", {
+        "request": request, "all_users": list_all_users()
+    })
+
+
+@app.post("/admin/users/{user_id}/make-player")
+async def admin_make_player(request: Request, user_id: str):
+    require_admin(request)
+    set_user_role(user_id, "player")
+    toggle_user_active(user_id, True)
+    return templates.TemplateResponse("partials/user_management.html", {
+        "request": request, "all_users": list_all_users()
+    })
+
+
+@app.post("/admin/users/{user_id}/reset-password")
+async def admin_reset_password(request: Request, user_id: str):
+    require_admin(request)
+    target = get_user_by_id(user_id)
+    if not target:
+        raise HTTPException(404, "User not found")
+    if target.get("is_admin"):
+        raise HTTPException(400, "Cannot reset another admin's password from here")
+    import secrets, string
+    alphabet = string.ascii_letters + string.digits
+    temp_password = ''.join(secrets.choice(alphabet) for _ in range(10))
+    update_user_password(user_id, hash_password(temp_password))
+    set_user_must_change_password(user_id, True)
+    username = target["username"]
+    return templates.TemplateResponse("partials/user_management.html", {
+        "request": request,
+        "all_users": list_all_users(),
+        "reset_password_msg": (
+            f"🔑 Temp password for {username}: {temp_password} "
+            f"— share it securely. They must change it on next login."
+        ),
+    })
+
+
+@app.delete("/admin/users/{user_id}")
+async def admin_delete_user(request: Request, user_id: str):
+    require_admin(request)
+    target = get_user_by_id(user_id)
+    if not target:
+        raise HTTPException(404, "User not found")
+    if target.get("is_admin"):
+        raise HTTPException(400, "Cannot delete admin users")
+    # Cascade delete: this user's matches
+    for m in list_matches_by_user(user_id):
+        delete_match(m["match_id"])
+    delete_user(user_id)
+    return templates.TemplateResponse("partials/user_management.html", {
+        "request": request, "all_users": list_all_users()
+    })
+
+
+# ── Matches: create + view ────────────────────────────────────────────────────
+@app.post("/matches")
+def create_match(request: Request,
+                 name: str = Form(...),
+                 player_a: str = Form(...),
+                 player_b: str = Form(...),
+                 match_type: str = Form(""),
+                 player_a2: str = Form(""),
+                 player_b2: str = Form(""),
+                 best_of: int = Form(0),
+                 points_to_win: int = Form(0),
+                 service_interval: int = Form(0),
+                 deuce_interval: int = Form(0),
+                 deciding_side_change_at: int = Form(-1),
+                 first_server: str = Form("A"),
+                 first_server_side: int = Form(1),
+                 first_receiver_side: int = Form(1),
+                 tournament_id: str = Form(""),
+                 round_num: int = Form(0),
+                 match_slot: int = Form(0)):
+    user = require_scorer(request)
+    cfg = get_settings()
+    best_of = int(best_of) or int(cfg["default_best_of"])
+    points_to_win = int(points_to_win) or int(cfg["default_points_to_win"])
+    service_interval = int(service_interval) or int(cfg["service_interval"])
+    deuce_interval = int(deuce_interval) or int(cfg["deuce_interval"])
+    if deciding_side_change_at < 0:
+        deciding_side_change_at = int(cfg.get("deciding_side_change_at", 5))
+    if match_type not in ("singles", "doubles"):
+        match_type = cfg.get("default_match_type", "singles")
+
+    if best_of not in (1, 3, 5, 7):
+        raise HTTPException(400, "best_of must be 1, 3, 5, or 7")
+    if points_to_win < 5:
+        raise HTTPException(400, "points_to_win must be at least 5")
+    if service_interval < 1 or deuce_interval < 1:
+        raise HTTPException(400, "intervals must be at least 1")
+    if first_server not in ("A", "B"):
+        first_server = "A"
+    if first_server_side not in (1, 2):
+        first_server_side = 1
+    if first_receiver_side not in (1, 2):
+        first_receiver_side = 1
+    if match_type == "doubles":
+        if not player_a2.strip() or not player_b2.strip():
+            raise HTTPException(400, "Doubles requires two players per side")
+
+    match_id = uuid.uuid4().hex
+    item = {
+        "match_id": match_id,
+        "name": name.strip(),
+        "match_type": match_type,
+        "player_a": player_a.strip() or "Player A",
+        "player_b": player_b.strip() or "Player B",
+        "best_of": int(best_of),
+        "points_to_win": int(points_to_win),
+        "service_interval": int(service_interval),
+        "deuce_interval": int(deuce_interval),
+        "deciding_side_change_at": int(deciding_side_change_at),
+        "first_server": first_server,
+        "created_at": now_ts(),
+        "user_id": user["user_id"],
+        "stats_recorded": False,
+    }
+    if match_type == "doubles":
+        item["player_a2"] = player_a2.strip()
+        item["player_b2"] = player_b2.strip()
+        item["first_server_side"] = int(first_server_side)
+        item["first_receiver_side"] = int(first_receiver_side)
+    if tournament_id:
+        item["tournament_id"] = tournament_id
+        item["round_num"] = int(round_num)
+        item["match_slot"] = int(match_slot)
+    put_match(item)
+
+    if tournament_id:
+        # link the new match_id to the tournament round/slot
+        t = get_tournament(tournament_id)
+        if t:
+            rounds = t.get("rounds", [])
+            for r in rounds:
+                if int(r.get("round_num", 0)) == int(round_num):
+                    for slot in r.get("matches", []):
+                        if int(slot.get("slot", 0)) == int(match_slot):
+                            slot["match_id"] = match_id
+                            break
+            update_tournament(tournament_id, "SET rounds = :r", {":r": rounds})
+
+    return RedirectResponse(f"/matches/{match_id}", status_code=303)
+
+
+@app.get("/matches/{match_id}", response_class=HTMLResponse)
+def match_page(request: Request, match_id: str):
+    user, match = check_match_access(request, match_id)
+    ctx = match_context(request, match, user=user)
+    return templates.TemplateResponse("match.html", ctx)
+
+
+@app.get("/live/{match_id}", response_class=HTMLResponse)
+def live_match(request: Request, match_id: str):
+    match = must_match(match_id)
+    ctx = match_context(request, match, user=None)
+    return templates.TemplateResponse("live.html", ctx)
+
+
+# ── Matches: scoring actions ──────────────────────────────────────────────────
+def _finalize_stats_if_needed(match: dict, state: dict) -> None:
+    if not state.get("match_winner") or match.get("stats_recorded"):
+        return
+    a_id = match.get("player_a_id")
+    b_id = match.get("player_b_id")
+    a_points = sum(g["a"] for g in state["games"])
+    b_points = sum(g["b"] for g in state["games"])
+    if a_id:
+        update_user_stats(a_id,
+                          match_won=(state["match_winner"] == "A"),
+                          games_played=state["a_games"] + state["b_games"],
+                          games_won=state["a_games"],
+                          points_scored=a_points)
+    if b_id:
+        update_user_stats(b_id,
+                          match_won=(state["match_winner"] == "B"),
+                          games_played=state["a_games"] + state["b_games"],
+                          games_won=state["b_games"],
+                          points_scored=b_points)
+    update_match(match["match_id"], "SET stats_recorded = :s, winner = :w",
+                 {":s": True, ":w": state["match_winner"]})
+
+    # If part of a tournament, record the winner in the tournament's bracket
+    tid = match.get("tournament_id")
+    if tid:
+        t = get_tournament(tid)
+        if t:
+            rounds = t.get("rounds", [])
+            for r in rounds:
+                if int(r.get("round_num", 0)) == int(match.get("round_num", 0)):
+                    for slot in r.get("matches", []):
+                        if slot.get("match_id") == match["match_id"]:
+                            slot["winner"] = state["match_winner"]
+                            slot["winner_name"] = match["player_a"] if state["match_winner"] == "A" else match["player_b"]
+                            break
+            update_tournament(tid, "SET rounds = :r", {":r": rounds})
+
+
+@app.post("/matches/{match_id}/point/{ab}", response_class=HTMLResponse)
+def add_point(request: Request, match_id: str, ab: str):
+    user, match = check_match_access(request, match_id)
+    if ab not in ("A", "B"):
+        raise HTTPException(400, "scorer must be A or B")
+
+    ev = list_events(match_id)
+    state = compute_state(match, ev)
+    if state.get("match_winner"):
+        return templates.TemplateResponse("partials/scoreboard.html", {
+            "request": request, "user": user, "match": match, "state": state,
+            "flash": "🏆 Match is already over."
+        })
+
+    put_event({
+        "match_id": match_id,
+        "ts": now_ts(),
+        "scorer": ab,
+        "game_num": state["current_game_num"],
+        "undone": False,
+    })
+    match2 = must_match(match_id)
+    state2 = compute_state(match2, list_events(match_id))
+    _finalize_stats_if_needed(match2, state2)
+    if state2.get("match_winner"):
+        match2 = must_match(match_id)
+        state2 = compute_state(match2, list_events(match_id))
+
+    flash = None
+    if state2.get("match_winner"):
+        winner_nm = player_name(match2, state2["match_winner"])
+        flash = f"🏆 Match Over! {winner_nm} wins!"
+    elif state2.get("side_change_alert"):
+        flash = "🔀 Change ends! (deciding game — swap sides)"
+    elif state2.get("service_change"):
+        server_nm = state2.get("server_name") or player_name(match2, state2["server"])
+        flash = f"🔁 Service change — {server_nm} to serve"
+
+    return templates.TemplateResponse("partials/scoreboard.html", {
+        "request": request, "user": user, "match": match2, "state": state2, "flash": flash,
+    })
+
+
+@app.post("/matches/{match_id}/let", response_class=HTMLResponse)
+def add_let(request: Request, match_id: str):
+    """Record a let (net on serve) — no point awarded, serve is replayed."""
+    user, match = check_match_access(request, match_id)
+    state = compute_state(match, list_events(match_id))
+    if state.get("match_winner"):
+        return templates.TemplateResponse("partials/scoreboard.html", {
+            "request": request, "user": user, "match": match, "state": state,
+            "flash": "🏆 Match is already over."
+        })
+    put_event({
+        "match_id": match_id,
+        "ts": now_ts(),
+        "type": "let",
+        "scorer": None,
+        "game_num": state["current_game_num"],
+        "undone": False,
+    })
+    match2 = must_match(match_id)
+    state2 = compute_state(match2, list_events(match_id))
+    return templates.TemplateResponse("partials/scoreboard.html", {
+        "request": request, "user": user, "match": match2, "state": state2,
+        "flash": "🌐 Let — serve replayed (no point).",
+    })
+
+
+@app.post("/matches/{match_id}/undo", response_class=HTMLResponse)
+def undo_point(request: Request, match_id: str):
+    user, match = check_match_access(request, match_id)
+    deleted = delete_last_event(match_id)
+    match2 = must_match(match_id)
+    state2 = compute_state(match2, list_events(match_id))
+    flash = "↩️ Last point undone." if deleted else "⚠️ No points to undo."
+    return templates.TemplateResponse("partials/scoreboard.html", {
+        "request": request, "user": user, "match": match2, "state": state2, "flash": flash,
+    })
+
+
+@app.post("/matches/{match_id}/players", response_class=HTMLResponse)
+def set_players(request: Request, match_id: str,
+                player_a: str = Form(""), player_b: str = Form(""),
+                player_a2: str = Form(""), player_b2: str = Form(""),
+                player_a_id: str = Form(""), player_b_id: str = Form("")):
+    user, match = check_match_access(request, match_id)
+    updates = []
+    vals: Dict[str, Any] = {}
+    if player_a.strip():
+        updates.append("player_a = :pa")
+        vals[":pa"] = player_a.strip()
+    if player_b.strip():
+        updates.append("player_b = :pb")
+        vals[":pb"] = player_b.strip()
+    if player_a2.strip():
+        updates.append("player_a2 = :pa2")
+        vals[":pa2"] = player_a2.strip()
+    if player_b2.strip():
+        updates.append("player_b2 = :pb2")
+        vals[":pb2"] = player_b2.strip()
+    if player_a_id:
+        updates.append("player_a_id = :paid")
+        vals[":paid"] = player_a_id
+    if player_b_id:
+        updates.append("player_b_id = :pbid")
+        vals[":pbid"] = player_b_id
+    if updates:
+        update_match(match_id, "SET " + ", ".join(updates), vals)
+    match2 = must_match(match_id)
+    state2 = compute_state(match2, list_events(match_id))
+    return templates.TemplateResponse("partials/scoreboard.html", {
+        "request": request, "user": user, "match": match2, "state": state2,
+        "flash": "✅ Players updated",
+    })
+
+
+@app.post("/matches/{match_id}/delete")
+def delete_own_match(request: Request, match_id: str):
+    user, match = check_match_access(request, match_id)
+    delete_match(match_id)
+    return RedirectResponse("/", status_code=303)
+
+
+# ── Tournaments ───────────────────────────────────────────────────────────────
+@app.post("/tournaments")
+def create_tournament(request: Request,
+                      name: str = Form(...),
+                      best_of: int = Form(0),
+                      points_to_win: int = Form(0),
+                      service_interval: int = Form(0),
+                      deuce_interval: int = Form(0)):
+    user = require_scorer(request)
+    cfg = get_settings()
+    tid = uuid.uuid4().hex
+    put_tournament({
+        "tournament_id": tid,
+        "name": name.strip(),
+        "best_of": int(best_of) or int(cfg["default_best_of"]),
+        "points_to_win": int(points_to_win) or int(cfg["default_points_to_win"]),
+        "service_interval": int(service_interval) or int(cfg["service_interval"]),
+        "deuce_interval": int(deuce_interval) or int(cfg["deuce_interval"]),
+        "user_id": user["user_id"],
+        "created_at": now_ts(),
+        "participants": [],
+        "rounds": [],
+    })
+    return RedirectResponse(f"/tournaments/{tid}", status_code=303)
+
+
+@app.get("/tournaments/{tournament_id}", response_class=HTMLResponse)
+def tournament_page(request: Request, tournament_id: str):
+    user = require_auth(request)
+    t = must_tournament(tournament_id)
+    if not user.get("is_admin") and t.get("user_id") != user["user_id"]:
+        raise HTTPException(403, "Access denied")
+    return templates.TemplateResponse("tournament.html", {
+        "request": request, "user": user, "tournament": t,
+        "roster": list_roster(),
+    })
+
+
+@app.post("/tournaments/{tournament_id}/participants", response_class=HTMLResponse)
+def add_participant(request: Request, tournament_id: str,
+                    name: str = Form(""), user_id: str = Form(""),
+                    roster_player_id: str = Form("")):
+    user, t = check_tournament_access(request, tournament_id)
+    display_name = name.strip()
+    linked_user_id = user_id or ""
+    if roster_player_id:
+        rp = get_roster_player(roster_player_id)
+        if rp:
+            display_name = rp["name"]
+            linked_user_id = rp.get("user_id", "") or linked_user_id
+    if user_id and not display_name:
+        u = get_user_by_id(user_id)
+        if u:
+            display_name = u["username"]
+    if not display_name:
+        raise HTTPException(400, "Name required")
+    participants = t.get("participants", [])
+    if any(p.get("name", "").lower() == display_name.lower() for p in participants):
+        t2 = must_tournament(tournament_id)
+        return templates.TemplateResponse("partials/tournament_body.html", {
+            "request": request, "user": user, "tournament": t2,
+            "roster": list_roster(),
+            "flash": f"⚠️ {display_name} is already a participant",
+        })
+    pid = uuid.uuid4().hex[:8]
+    participants.append({"id": pid, "name": display_name, "user_id": linked_user_id})
+    update_tournament(tournament_id, "SET participants = :p", {":p": participants})
+    t2 = must_tournament(tournament_id)
+    return templates.TemplateResponse("partials/tournament_body.html", {
+        "request": request, "user": user, "tournament": t2,
+        "roster": list_roster(),
+        "flash": f"✅ Added {display_name}",
+    })
+
+
+@app.post("/tournaments/{tournament_id}/participants/remove", response_class=HTMLResponse)
+def remove_participant(request: Request, tournament_id: str, participant_id: str = Form(...)):
+    user, t = check_tournament_access(request, tournament_id)
+    participants = [p for p in t.get("participants", []) if p.get("id") != participant_id]
+    update_tournament(tournament_id, "SET participants = :p", {":p": participants})
+    t2 = must_tournament(tournament_id)
+    return templates.TemplateResponse("partials/tournament_body.html", {
+        "request": request, "user": user, "tournament": t2,
+        "roster": list_roster(),
+        "flash": "Removed participant",
+    })
+
+
+@app.post("/tournaments/{tournament_id}/participants/bulk", response_class=HTMLResponse)
+def bulk_add_participants(request: Request, tournament_id: str, names: str = Form(...)):
+    """Add many participants at once. Accepts one name per line
+    (commas also allowed). Duplicates (case-insensitive) are skipped."""
+    user, t = check_tournament_access(request, tournament_id)
+    # Split on newlines, commas, semicolons; strip empties.
+    raw = names.replace(",", "\n").replace(";", "\n").splitlines()
+    incoming = [n.strip() for n in raw if n.strip()]
+    if not incoming:
+        raise HTTPException(400, "Provide at least one name")
+
+    participants = list(t.get("participants", []))
+    existing_lower = {p.get("name", "").lower() for p in participants}
+    added, skipped = [], []
+    for nm in incoming:
+        key = nm.lower()
+        if key in existing_lower:
+            skipped.append(nm)
+            continue
+        existing_lower.add(key)
+        pid = uuid.uuid4().hex[:8]
+        participants.append({"id": pid, "name": nm, "user_id": ""})
+        added.append(nm)
+
+    update_tournament(tournament_id, "SET participants = :p", {":p": participants})
+    t2 = must_tournament(tournament_id)
+    flash_bits = []
+    if added:
+        flash_bits.append(f"✅ Added {len(added)}: {', '.join(added[:5])}{'…' if len(added) > 5 else ''}")
+    if skipped:
+        flash_bits.append(f"⚠️ Skipped {len(skipped)} duplicate(s)")
+    return templates.TemplateResponse("partials/tournament_body.html", {
+        "request": request, "user": user, "tournament": t2,
+        "roster": list_roster(),
+        "flash": " • ".join(flash_bits) or "No participants added",
+    })
+
+
+@app.post("/tournaments/{tournament_id}/rounds", response_class=HTMLResponse)
+def add_round(request: Request, tournament_id: str, round_name: str = Form(...)):
+    user, t = check_tournament_access(request, tournament_id)
+    rounds = t.get("rounds", [])
+    round_num = (max((int(r.get("round_num", 0)) for r in rounds), default=0)) + 1
+    rounds.append({
+        "round_num": round_num,
+        "name": round_name.strip() or f"Round {round_num}",
+        "matches": [],
+    })
+    update_tournament(tournament_id, "SET rounds = :r", {":r": rounds})
+    t2 = must_tournament(tournament_id)
+    return templates.TemplateResponse("partials/tournament_body.html", {
+        "request": request, "user": user, "tournament": t2,
+        "roster": list_roster(),
+        "flash": f"✅ Added {round_name}",
+    })
+
+
+@app.post("/tournaments/{tournament_id}/rounds/{round_num}/pairs", response_class=HTMLResponse)
+def add_pair(request: Request, tournament_id: str, round_num: int,
+             match_type: str = Form("singles"),
+             participant_a: str = Form(...), participant_b: str = Form(...),
+             participant_a2: str = Form(""), participant_b2: str = Form("")):
+    user, t = check_tournament_access(request, tournament_id)
+    participants = {p["id"]: p for p in t.get("participants", [])}
+    if match_type not in ("singles", "doubles"):
+        match_type = "singles"
+
+    a = participants.get(participant_a)
+    b = participants.get(participant_b)
+    if not a or not b or a["id"] == b["id"]:
+        raise HTTPException(400, "Select two different participants")
+
+    a2 = b2 = None
+    if match_type == "doubles":
+        a2 = participants.get(participant_a2)
+        b2 = participants.get(participant_b2)
+        if not a2 or not b2:
+            raise HTTPException(400, "Doubles requires 4 participants")
+        chosen = {a["id"], a2["id"], b["id"], b2["id"]}
+        if len(chosen) != 4:
+            raise HTTPException(400, "All 4 doubles participants must be distinct")
+
+    rounds = t.get("rounds", [])
+    target_round = next((r for r in rounds if int(r.get("round_num", 0)) == int(round_num)), None)
+    if not target_round:
+        raise HTTPException(404, "Round not found")
+    slot = (max((int(s.get("slot", 0)) for s in target_round.get("matches", [])), default=0)) + 1
+    pair = {
+        "slot": slot,
+        "match_type": match_type,
+        "a_name": a["name"], "a_id": a["id"],
+        "b_name": b["name"], "b_id": b["id"],
+        "match_id": "",
+        "winner": "",
+        "winner_name": "",
+    }
+    if match_type == "doubles":
+        pair["a2_name"] = a2["name"]; pair["a2_id"] = a2["id"]
+        pair["b2_name"] = b2["name"]; pair["b2_id"] = b2["id"]
+    target_round.setdefault("matches", []).append(pair)
+    update_tournament(tournament_id, "SET rounds = :r", {":r": rounds})
+    t2 = must_tournament(tournament_id)
+    label = (f"{a['name']}/{a2['name']} vs {b['name']}/{b2['name']}"
+             if match_type == "doubles" else f"{a['name']} vs {b['name']}")
+    return templates.TemplateResponse("partials/tournament_body.html", {
+        "request": request, "user": user, "tournament": t2,
+        "roster": list_roster(),
+        "flash": f"✅ Pairing added: {label}",
+    })
+
+
+def _find_participant_by_name(participants: List[Dict[str, Any]], name: str) -> Optional[Dict[str, Any]]:
+    """Case-insensitive lookup among tournament participants."""
+    key = name.strip().lower()
+    for p in participants:
+        if p.get("name", "").strip().lower() == key:
+            return p
+    return None
+
+
+def _parse_pair_line(line: str) -> Optional[Dict[str, Any]]:
+    """Parse a single bulk pair line. Returns dict with keys:
+      match_type: "singles" | "doubles"
+      a_names, b_names: list[str]  (len 1 for singles, len 2 for doubles)
+    Accepted separators between the two sides: 'vs', 'v', '-', '—', '|'.
+    Doubles partners on one side separated by '+', '&', or '/'.
+    """
+    s = line.strip()
+    if not s or s.startswith("#"):
+        return None
+    # Split sides
+    import re
+    parts = re.split(r"\s+(?:vs\.?|v\.?|—|-|\|)\s+", s, maxsplit=1, flags=re.IGNORECASE)
+    if len(parts) != 2:
+        return None
+    left, right = parts[0].strip(), parts[1].strip()
+    if not left or not right:
+        return None
+
+    def _side(txt: str) -> List[str]:
+        return [n.strip() for n in re.split(r"\s*[+&/]\s*", txt) if n.strip()]
+
+    a_names = _side(left)
+    b_names = _side(right)
+    if not a_names or not b_names:
+        return None
+    if len(a_names) not in (1, 2) or len(b_names) not in (1, 2):
+        return None
+    if len(a_names) != len(b_names):
+        return None  # mixed singles/doubles on one line is not allowed
+    return {
+        "match_type": "doubles" if len(a_names) == 2 else "singles",
+        "a_names": a_names,
+        "b_names": b_names,
+    }
+
+
+@app.post("/tournaments/{tournament_id}/rounds/{round_num}/pairs/bulk", response_class=HTMLResponse)
+def bulk_add_pairs(request: Request, tournament_id: str, round_num: int,
+                   pairings: str = Form(...)):
+    """Bulk-create pairings. One per line. Supports:
+        Alice vs Bob                        (singles)
+        Alice + Amy vs Bob + Ben           (doubles)
+    Participants must already exist on the tournament (case-insensitive match).
+    Unknown names and malformed lines are reported back and skipped.
+    """
+    user, t = check_tournament_access(request, tournament_id)
+    rounds = t.get("rounds", [])
+    target_round = next((r for r in rounds if int(r.get("round_num", 0)) == int(round_num)), None)
+    if not target_round:
+        raise HTTPException(404, "Round not found")
+
+    participants = t.get("participants", [])
+    if not participants:
+        raise HTTPException(400, "Add participants before pairing")
+
+    lines = [ln for ln in pairings.splitlines() if ln.strip()]
+    if not lines:
+        raise HTTPException(400, "Provide at least one pairing")
+
+    matches_list = target_round.setdefault("matches", [])
+    next_slot = (max((int(s.get("slot", 0)) for s in matches_list), default=0)) + 1
+    added, skipped = [], []
+
+    for raw in lines:
+        parsed = _parse_pair_line(raw)
+        if not parsed:
+            skipped.append(f"⚠️ Bad line: {raw.strip()[:60]}")
+            continue
+        # Resolve names → participant records.
+        try:
+            a_side = [_find_participant_by_name(participants, n) for n in parsed["a_names"]]
+            b_side = [_find_participant_by_name(participants, n) for n in parsed["b_names"]]
+        except Exception:
+            skipped.append(f"⚠️ Bad line: {raw.strip()[:60]}")
+            continue
+        if any(p is None for p in a_side + b_side):
+            missing = [n for n, p in
+                       zip(parsed["a_names"] + parsed["b_names"], a_side + b_side)
+                       if p is None]
+            skipped.append(f"❓ Unknown participant(s): {', '.join(missing)}")
+            continue
+        chosen_ids = {p["id"] for p in a_side + b_side}
+        if len(chosen_ids) != len(a_side) + len(b_side):
+            skipped.append(f"⚠️ Duplicate participant: {raw.strip()[:60]}")
+            continue
+        pair = {
+            "slot": next_slot,
+            "match_type": parsed["match_type"],
+            "a_name": a_side[0]["name"], "a_id": a_side[0]["id"],
+            "b_name": b_side[0]["name"], "b_id": b_side[0]["id"],
+            "match_id": "",
+            "winner": "",
+            "winner_name": "",
+        }
+        if parsed["match_type"] == "doubles":
+            pair["a2_name"] = a_side[1]["name"]; pair["a2_id"] = a_side[1]["id"]
+            pair["b2_name"] = b_side[1]["name"]; pair["b2_id"] = b_side[1]["id"]
+            added.append(f"{a_side[0]['name']}/{a_side[1]['name']} vs {b_side[0]['name']}/{b_side[1]['name']}")
+        else:
+            added.append(f"{a_side[0]['name']} vs {b_side[0]['name']}")
+        matches_list.append(pair)
+        next_slot += 1
+
+    update_tournament(tournament_id, "SET rounds = :r", {":r": rounds})
+    t2 = must_tournament(tournament_id)
+    flash_parts = []
+    if added:
+        flash_parts.append(f"✅ Added {len(added)} pairing(s)")
+    if skipped:
+        flash_parts.append(" • ".join(skipped[:5]))
+    return templates.TemplateResponse("partials/tournament_body.html", {
+        "request": request, "user": user, "tournament": t2,
+        "roster": list_roster(),
+        "flash": " • ".join(flash_parts) or "No pairings added",
+    })
+
+
+@app.post("/tournaments/{tournament_id}/rounds/{round_num}/pairs/{slot}/edit", response_class=HTMLResponse)
+def edit_pair(request: Request, tournament_id: str, round_num: int, slot: int,
+              match_type: str = Form("singles"),
+              participant_a: str = Form(...), participant_b: str = Form(...),
+              participant_a2: str = Form(""), participant_b2: str = Form("")):
+    """Change who plays whom for an existing pair. Only allowed before a match
+    has been started (once a match_id exists we don't rewrite history)."""
+    user, t = check_tournament_access(request, tournament_id)
+    rounds = t.get("rounds", [])
+    target_round = next((r for r in rounds if int(r.get("round_num", 0)) == int(round_num)), None)
+    if not target_round:
+        raise HTTPException(404, "Round not found")
+    pair = next((m for m in target_round.get("matches", []) if int(m.get("slot", 0)) == int(slot)), None)
+    if not pair:
+        raise HTTPException(404, "Pair not found")
+    if pair.get("match_id"):
+        raise HTTPException(400, "Match already started — delete it first to re-pair")
+
+    if match_type not in ("singles", "doubles"):
+        match_type = "singles"
+    participants = {p["id"]: p for p in t.get("participants", [])}
+    a = participants.get(participant_a); b = participants.get(participant_b)
+    if not a or not b or a["id"] == b["id"]:
+        raise HTTPException(400, "Pick two different participants")
+
+    pair["match_type"] = match_type
+    pair["a_name"] = a["name"]; pair["a_id"] = a["id"]
+    pair["b_name"] = b["name"]; pair["b_id"] = b["id"]
+    # Reset any prior doubles fields.
+    for k in ("a2_name", "a2_id", "b2_name", "b2_id"):
+        pair.pop(k, None)
+    if match_type == "doubles":
+        a2 = participants.get(participant_a2); b2 = participants.get(participant_b2)
+        if not a2 or not b2:
+            raise HTTPException(400, "Doubles requires 4 participants")
+        if len({a["id"], a2["id"], b["id"], b2["id"]}) != 4:
+            raise HTTPException(400, "All 4 doubles participants must be distinct")
+        pair["a2_name"] = a2["name"]; pair["a2_id"] = a2["id"]
+        pair["b2_name"] = b2["name"]; pair["b2_id"] = b2["id"]
+
+    update_tournament(tournament_id, "SET rounds = :r", {":r": rounds})
+    t2 = must_tournament(tournament_id)
+    return templates.TemplateResponse("partials/tournament_body.html", {
+        "request": request, "user": user, "tournament": t2,
+        "roster": list_roster(),
+        "flash": "✅ Pairing updated",
+    })
+
+
+@app.post("/tournaments/{tournament_id}/rounds/{round_num}/pairs/{slot}/delete", response_class=HTMLResponse)
+def delete_pair(request: Request, tournament_id: str, round_num: int, slot: int):
+    """Remove a pair from the round. Refuses if the match has already been
+    started — the scorer must first delete the match record."""
+    user, t = check_tournament_access(request, tournament_id)
+    rounds = t.get("rounds", [])
+    target_round = next((r for r in rounds if int(r.get("round_num", 0)) == int(round_num)), None)
+    if not target_round:
+        raise HTTPException(404, "Round not found")
+    pair = next((m for m in target_round.get("matches", []) if int(m.get("slot", 0)) == int(slot)), None)
+    if not pair:
+        raise HTTPException(404, "Pair not found")
+    if pair.get("match_id"):
+        raise HTTPException(400, "Match already started — delete the match first")
+    target_round["matches"] = [
+        m for m in target_round.get("matches", []) if int(m.get("slot", 0)) != int(slot)
+    ]
+    update_tournament(tournament_id, "SET rounds = :r", {":r": rounds})
+    t2 = must_tournament(tournament_id)
+    return templates.TemplateResponse("partials/tournament_body.html", {
+        "request": request, "user": user, "tournament": t2,
+        "roster": list_roster(),
+        "flash": "🗑️ Pairing removed",
+    })
+
+
+@app.post("/tournaments/{tournament_id}/rounds/{round_num}/start/{slot}")
+def start_pair_match(request: Request, tournament_id: str, round_num: int, slot: int):
+    user, t = check_tournament_access(request, tournament_id)
+    target_round = next((r for r in t.get("rounds", []) if int(r.get("round_num", 0)) == int(round_num)), None)
+    if not target_round:
+        raise HTTPException(404, "Round not found")
+    pair = next((m for m in target_round.get("matches", []) if int(m.get("slot", 0)) == int(slot)), None)
+    if not pair:
+        raise HTTPException(404, "Pair not found")
+    if pair.get("match_id"):
+        return RedirectResponse(f"/matches/{pair['match_id']}", status_code=303)
+
+    cfg = get_settings()
+    match_id = uuid.uuid4().hex
+    match_type = pair.get("match_type", "singles")
+    if match_type == "doubles":
+        name = (f"{t['name']} — {target_round['name']}: "
+                f"{pair['a_name']}/{pair.get('a2_name','')} vs "
+                f"{pair['b_name']}/{pair.get('b2_name','')}")
+    else:
+        name = f"{t['name']} — {target_round['name']}: {pair['a_name']} vs {pair['b_name']}"
+
+    item = {
+        "match_id": match_id,
+        "name": name,
+        "match_type": match_type,
+        "player_a": pair["a_name"],
+        "player_b": pair["b_name"],
+        "best_of": int(t.get("best_of", cfg["default_best_of"])),
+        "points_to_win": int(t.get("points_to_win", cfg["default_points_to_win"])),
+        "service_interval": int(t.get("service_interval", cfg["service_interval"])),
+        "deuce_interval": int(t.get("deuce_interval", cfg["deuce_interval"])),
+        "deciding_side_change_at": int(cfg.get("deciding_side_change_at", 5)),
+        "first_server": "A",
+        "created_at": now_ts(),
+        "user_id": user["user_id"],
+        "tournament_id": tournament_id,
+        "round_num": int(round_num),
+        "match_slot": int(slot),
+        "stats_recorded": False,
+    }
+    if match_type == "doubles":
+        item["player_a2"] = pair.get("a2_name", "")
+        item["player_b2"] = pair.get("b2_name", "")
+        item["first_server_side"] = 1
+        item["first_receiver_side"] = 1
+    put_match(item)
+    pair["match_id"] = match_id
+    update_tournament(tournament_id, "SET rounds = :r", {":r": t["rounds"]})
+    return RedirectResponse(f"/matches/{match_id}", status_code=303)
+
+
+# ── Public tournament dashboard ───────────────────────────────────────────────
+@app.get("/live/tournaments/{tournament_id}", response_class=HTMLResponse)
+def live_tournament(request: Request, tournament_id: str):
+    """Public read-only board that shows every match in a tournament with its
+    current live score. Click a match to open its live scoreboard.
+    No auth required — anyone with the link can watch."""
+    t = get_tournament(tournament_id)
+    if not t:
+        raise HTTPException(404, "Tournament not found")
+
+    rounds_view = []
+    for r in t.get("rounds", []):
+        matches_view = []
+        for pair in r.get("matches", []):
+            mid = pair.get("match_id") or ""
+            row = {
+                "slot": int(pair.get("slot", 0)),
+                "match_type": pair.get("match_type", "singles"),
+                "a_name": pair.get("a_name", ""),
+                "b_name": pair.get("b_name", ""),
+                "a2_name": pair.get("a2_name", ""),
+                "b2_name": pair.get("b2_name", ""),
+                "match_id": mid,
+                "winner_name": pair.get("winner_name", ""),
+                "status": "pending",
+                "a_score": 0, "b_score": 0,
+                "a_games": 0, "b_games": 0,
+                "current_game_num": 1,
+                "is_deuce": False,
+                "is_deciding_game": False,
+            }
+            if mid:
+                match = get_match(mid)
+                if match:
+                    ev = list_events(mid)
+                    st = compute_state(match, ev)
+                    row["a_score"] = st.get("a_score", 0)
+                    row["b_score"] = st.get("b_score", 0)
+                    row["a_games"] = st.get("a_games", 0)
+                    row["b_games"] = st.get("b_games", 0)
+                    row["current_game_num"] = st.get("current_game_num", 1)
+                    row["is_deuce"] = bool(st.get("is_deuce"))
+                    row["is_deciding_game"] = bool(st.get("is_deciding_game"))
+                    if st.get("match_winner"):
+                        row["status"] = "finished"
+                    else:
+                        row["status"] = "live"
+            matches_view.append(row)
+        rounds_view.append({
+            "round_num": int(r.get("round_num", 0)),
+            "name": r.get("name", ""),
+            "matches": matches_view,
+        })
+
+    return templates.TemplateResponse("live_tournament.html", {
+        "request": request,
+        "tournament": t,
+        "rounds_view": rounds_view,
+    })

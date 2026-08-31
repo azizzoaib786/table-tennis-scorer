@@ -1,0 +1,45 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1"/>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/htmx.org@1.9.12"></script>
+    <script defer src="/static/app.js"></script>
+    <title>{{ match.name }} — TT Scorer</title>
+    <link rel="manifest" href="/static/manifest.json" />
+    <meta name="theme-color" content="#059669" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <meta name="apple-mobile-web-app-title" content="TTScorer" />
+    <link rel="apple-touch-icon" href="/static/icons/icon-192.png" />
+  </head>
+  <body class="bg-gradient-to-br from-emerald-100 via-teal-100 to-sky-100 min-h-screen">
+    <div class="max-w-3xl mx-auto p-3 sm:p-4">
+      <div class="bg-white rounded-2xl border-2 border-emerald-200 shadow-xl p-4 sm:p-5">
+        <div class="flex items-start justify-between gap-3 flex-wrap">
+          <div class="flex-1 min-w-0">
+            <div class="flex items-center gap-2 mb-1">
+              <span class="text-2xl">🏓</span>
+              <h1 class="text-xl sm:text-2xl font-bold text-emerald-900 truncate">{{ match.name }}</h1>
+            </div>
+            <p class="text-emerald-700 text-sm font-medium">Bo{{ match.best_of }} • First to {{ match.points_to_win }} • Win by 2</p>
+            <div class="mt-2 flex items-center gap-2">
+              <input type="text" readonly value="{{ request.url.scheme }}://{{ request.url.netloc }}/live/{{ match.match_id }}" id="liveLink" class="flex-1 text-xs px-2 py-1 bg-emerald-50 border border-emerald-300 rounded-lg font-mono text-emerald-700 min-w-0"/>
+              <button onclick="navigator.clipboard.writeText(document.getElementById('liveLink').value); this.innerText='✓ Copied!'; setTimeout(()=>this.innerText='📋 Copy', 2000)" class="shrink-0 px-3 py-1 text-xs font-bold bg-gradient-to-r from-emerald-500 to-teal-500 text-white rounded-lg">📋 Copy</button>
+            </div>
+          </div>
+          <a href="/" class="px-3 py-2 rounded-xl border-2 border-emerald-200 bg-emerald-50 text-emerald-800 font-semibold shadow-sm">🏠</a>
+        </div>
+      </div>
+
+      <div id="scoreboard" class="mt-3 sm:mt-4">
+        {% include "partials/scoreboard.html" %}
+      </div>
+
+      <div class="mt-4 text-center pb-4">
+        <p class="text-sm text-emerald-700 font-medium">🏓 <span class="font-bold bg-gradient-to-r from-emerald-600 to-teal-600 bg-clip-text text-transparent">Table Tennis Scorer</span></p>
+      </div>
+    </div>
+  </body>
+</html>

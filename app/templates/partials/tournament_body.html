@@ -1,0 +1,251 @@
+<div class="space-y-4">
+  {% if flash %}
+  <div class="bg-white rounded-2xl border-2 border-sky-300 shadow-md p-3 text-center text-sky-900 font-bold">{{ flash }}</div>
+  {% endif %}
+
+  <!-- Public live board link -->
+  <div class="bg-gradient-to-r from-emerald-500 to-teal-600 text-white rounded-2xl shadow-lg p-4 flex items-center justify-between gap-3 flex-wrap">
+    <div class="flex items-center gap-2 min-w-0">
+      <span class="text-2xl">🌐</span>
+      <div class="min-w-0">
+        <div class="font-bold">Tournament-wide live board</div>
+        <div class="text-xs opacity-90 truncate">Share one link — viewers see every match & can click into any live scoreboard.</div>
+      </div>
+    </div>
+    <div class="flex gap-2">
+      <a href="/live/tournaments/{{ tournament.tournament_id }}" target="_blank"
+         class="px-3 py-2 rounded-lg bg-white text-emerald-700 font-bold text-sm shadow">📺 Open</a>
+      <button type="button"
+              onclick="navigator.clipboard.writeText(window.location.origin + '/live/tournaments/{{ tournament.tournament_id }}').then(() => this.textContent='✅ Copied').catch(() => this.textContent='⚠️ Copy failed')"
+              class="px-3 py-2 rounded-lg bg-white/20 border border-white/40 text-white font-bold text-sm">📋 Copy link</button>
+    </div>
+  </div>
+
+  <!-- Participants -->
+  <div class="bg-white rounded-2xl border-2 border-sky-200 shadow-lg p-4">
+    <h2 class="text-lg font-bold text-sky-900 mb-3">👥 Participants ({{ (tournament.participants or [])|length }})</h2>
+
+    {# Quick add from admin-managed roster #}
+    {% set participant_names = (tournament.participants or []) | map(attribute='name') | list %}
+    {% set unassigned_roster = (roster or []) | rejectattr('name', 'in', participant_names) | list %}
+    {% if unassigned_roster %}
+    <div class="mb-3">
+      <div class="text-xs font-bold text-sky-800 mb-1">Add from roster</div>
+      <form
+        hx-post="/tournaments/{{ tournament.tournament_id }}/participants"
+        hx-target="#tournament-body"
+        hx-swap="innerHTML"
+        class="flex gap-2">
+        <select name="roster_player_id" required class="flex-1 rounded-xl border-2 border-sky-200 focus:border-sky-400 px-3 py-2">
+          <option value="">— pick a roster player —</option>
+          {% for p in unassigned_roster %}
+          <option value="{{ p.player_id }}">{{ p.name }}</option>
+          {% endfor %}
+        </select>
+        <button class="rounded-xl bg-gradient-to-r from-sky-500 to-indigo-600 text-white font-bold px-4">+ Add</button>
+      </form>
+    </div>
+    {% endif %}
+
+    <div class="text-xs font-bold text-sky-800 mb-1">Or add by name</div>
+    <form
+      hx-post="/tournaments/{{ tournament.tournament_id }}/participants"
+      hx-target="#tournament-body"
+      hx-swap="innerHTML"
+      class="flex gap-2 mb-3">
+      <input name="name" placeholder="Player name" required class="flex-1 rounded-xl border-2 border-sky-200 focus:border-sky-400 px-3 py-2"/>
+      <button class="rounded-xl bg-gradient-to-r from-sky-500 to-indigo-600 text-white font-bold px-4">+ Add</button>
+    </form>
+
+    <details class="mb-3">
+      <summary class="cursor-pointer text-xs font-bold text-sky-800">⬆️ Bulk upload names</summary>
+      <form
+        hx-post="/tournaments/{{ tournament.tournament_id }}/participants/bulk"
+        hx-target="#tournament-body"
+        hx-swap="innerHTML"
+        class="mt-2 space-y-2">
+        <textarea name="names" required rows="5" placeholder="One name per line (or comma-separated)&#10;Alice&#10;Bob&#10;Charlie" class="w-full rounded-xl border-2 border-sky-200 focus:border-sky-400 px-3 py-2 text-sm font-mono"></textarea>
+        <button class="w-full rounded-xl bg-sky-600 hover:bg-sky-700 text-white font-bold px-3 py-2">⬆️ Add all</button>
+      </form>
+    </details>
+
+    {% if tournament.participants %}
+    <div class="flex flex-wrap gap-2">
+      {% for p in tournament.participants %}
+      <div class="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-sky-100 border-2 border-sky-200 text-sky-900 font-medium text-sm">
+        {{ p.name }}
+        <form hx-post="/tournaments/{{ tournament.tournament_id }}/participants/remove" hx-target="#tournament-body" hx-swap="innerHTML" hx-confirm="Remove {{ p.name }}?" class="inline">
+          <input type="hidden" name="participant_id" value="{{ p.id }}"/>
+          <button class="ml-1 text-sky-500 hover:text-red-500 font-bold leading-none">×</button>
+        </form>
+      </div>
+      {% endfor %}
+    </div>
+    {% else %}
+    <p class="text-sm text-sky-700">Add participants to get started.</p>
+    {% endif %}
+  </div>
+
+  <!-- Add round -->
+  <div class="bg-white rounded-2xl border-2 border-indigo-200 shadow-lg p-4">
+    <h2 class="text-lg font-bold text-indigo-900 mb-3">🎯 Add Round</h2>
+    <form
+      hx-post="/tournaments/{{ tournament.tournament_id }}/rounds"
+      hx-target="#tournament-body"
+      hx-swap="innerHTML"
+      class="flex gap-2">
+      <input name="round_name" placeholder="Round 1 / Quarter Finals / etc." required class="flex-1 rounded-xl border-2 border-indigo-200 focus:border-indigo-400 px-3 py-2"/>
+      <button class="rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 text-white font-bold px-4">+ Round</button>
+    </form>
+  </div>
+
+  <!-- Rounds -->
+  {% for r in (tournament.rounds or []) %}
+  <div class="bg-white rounded-2xl border-2 border-emerald-200 shadow-lg p-4">
+    <div class="flex items-center justify-between mb-3">
+      <h2 class="text-lg font-bold text-emerald-900">{{ r.name }}</h2>
+      <span class="text-xs px-2 py-1 rounded-full bg-emerald-100 text-emerald-700 font-bold">Round {{ r.round_num }}</span>
+    </div>
+
+    <!-- Create pair (singles/doubles) -->
+    {% if tournament.participants and (tournament.participants|length) >= 2 %}
+    <form
+      hx-post="/tournaments/{{ tournament.tournament_id }}/rounds/{{ r.round_num }}/pairs"
+      hx-target="#tournament-body"
+      hx-swap="innerHTML"
+      onchange="const dbl = this.querySelector('[name=match_type]').value === 'doubles'; this.querySelectorAll('.pair-doubles-only').forEach(el => el.classList.toggle('hidden', !dbl));"
+      class="mb-3 p-3 bg-emerald-50 rounded-xl border border-emerald-100 space-y-2">
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+        <select name="match_type" class="rounded-lg border-2 border-emerald-200 px-3 py-2 text-sm">
+          <option value="singles">Singles</option>
+          <option value="doubles" {% if (tournament.participants|length) < 4 %}disabled{% endif %}>Doubles</option>
+        </select>
+        <div class="text-xs text-emerald-800 self-center">
+          {% if (tournament.participants|length) < 4 %}Doubles needs ≥ 4 participants{% else %}Pick 4 distinct for doubles{% endif %}
+        </div>
+      </div>
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+        <div>
+          <div class="text-xs font-bold text-emerald-800 mb-1">Team A</div>
+          <select name="participant_a" required class="w-full rounded-lg border-2 border-emerald-200 px-3 py-2 text-sm">
+            <option value="">— Player A1 —</option>
+            {% for p in tournament.participants %}<option value="{{ p.id }}">{{ p.name }}</option>{% endfor %}
+          </select>
+          <select name="participant_a2" class="pair-doubles-only hidden mt-1 w-full rounded-lg border-2 border-emerald-200 px-3 py-2 text-sm">
+            <option value="">— Player A2 (partner) —</option>
+            {% for p in tournament.participants %}<option value="{{ p.id }}">{{ p.name }}</option>{% endfor %}
+          </select>
+        </div>
+        <div>
+          <div class="text-xs font-bold text-emerald-800 mb-1">Team B</div>
+          <select name="participant_b" required class="w-full rounded-lg border-2 border-emerald-200 px-3 py-2 text-sm">
+            <option value="">— Player B1 —</option>
+            {% for p in tournament.participants %}<option value="{{ p.id }}">{{ p.name }}</option>{% endfor %}
+          </select>
+          <select name="participant_b2" class="pair-doubles-only hidden mt-1 w-full rounded-lg border-2 border-emerald-200 px-3 py-2 text-sm">
+            <option value="">— Player B2 (partner) —</option>
+            {% for p in tournament.participants %}<option value="{{ p.id }}">{{ p.name }}</option>{% endfor %}
+          </select>
+        </div>
+      </div>
+      <button class="w-full rounded-lg bg-gradient-to-r from-emerald-600 to-teal-600 text-white font-bold px-3 py-2 text-sm">+ Add pair</button>
+    </form>
+
+    <details class="mb-3">
+      <summary class="cursor-pointer text-xs font-bold text-emerald-800">⬆️ Bulk paste pairings</summary>
+      <form
+        hx-post="/tournaments/{{ tournament.tournament_id }}/rounds/{{ r.round_num }}/pairs/bulk"
+        hx-target="#tournament-body"
+        hx-swap="innerHTML"
+        class="mt-2 space-y-2">
+        <textarea name="pairings" required rows="5"
+                  placeholder="One pairing per line. Examples:&#10;Alice vs Bob&#10;Charlie vs Dave&#10;Alice + Amy vs Bob + Ben     (doubles)&#10;# lines starting with # are ignored"
+                  class="w-full rounded-xl border-2 border-emerald-200 focus:border-emerald-400 px-3 py-2 text-sm font-mono"></textarea>
+        <p class="text-xs text-emerald-800">Names must match existing participants (case-insensitive). Separators between sides: <code>vs</code>, <code>v</code>, <code>-</code>, <code>|</code>. Doubles partners: <code>+</code>, <code>&amp;</code>, <code>/</code>.</p>
+        <button class="w-full rounded-lg bg-emerald-700 hover:bg-emerald-800 text-white font-bold px-3 py-2 text-sm">⬆️ Import pairings</button>
+      </form>
+    </details>
+    {% endif %}
+
+    <!-- Matches in round -->
+    {% if r.matches %}
+    <div class="space-y-2">
+      {% for m in r.matches %}
+      {% set is_doubles = m.match_type == 'doubles' %}
+      <div class="rounded-xl border-2 border-emerald-100 bg-white p-3 space-y-2">
+        <div class="flex items-center justify-between gap-2 flex-wrap">
+          <div class="flex-1 min-w-0">
+            <div class="flex items-center gap-2 flex-wrap">
+              <span class="text-[10px] px-2 py-0.5 rounded-full border {% if is_doubles %}bg-fuchsia-50 text-fuchsia-700 border-fuchsia-200{% else %}bg-emerald-50 text-emerald-700 border-emerald-200{% endif %} font-bold">{{ 'DOUBLES' if is_doubles else 'SINGLES' }}</span>
+              <div class="font-bold text-emerald-900 truncate">
+                {% if is_doubles %}
+                  {{ m.a_name }} / {{ m.a2_name }} <span class="text-slate-400">vs</span> {{ m.b_name }} / {{ m.b2_name }}
+                {% else %}
+                  {{ m.a_name }} <span class="text-slate-400">vs</span> {{ m.b_name }}
+                {% endif %}
+              </div>
+            </div>
+            {% if m.winner %}<div class="text-xs text-amber-700 font-bold mt-0.5">🏆 Winner: {{ m.winner_name }}</div>{% endif %}
+          </div>
+          <div class="flex gap-2 flex-wrap">
+            {% if m.match_id %}
+            <a href="/matches/{{ m.match_id }}" class="px-3 py-2 rounded-lg bg-blue-600 text-white text-xs font-bold shadow-md">Open</a>
+            <a href="/live/{{ m.match_id }}" target="_blank" class="px-3 py-2 rounded-lg bg-emerald-600 text-white text-xs font-bold shadow-md">📺 Live</a>
+            {% else %}
+            <form method="post" action="/tournaments/{{ tournament.tournament_id }}/rounds/{{ r.round_num }}/start/{{ m.slot }}">
+              <button class="px-3 py-2 rounded-lg bg-gradient-to-r from-emerald-600 to-teal-600 text-white text-xs font-bold shadow-md">▶️ Start</button>
+            </form>
+            <button type="button" onclick="this.closest('.rounded-xl').querySelector('.pair-edit-panel').classList.toggle('hidden')"
+                    class="px-3 py-2 rounded-lg bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold shadow-md">✏️ Edit</button>
+            <form hx-post="/tournaments/{{ tournament.tournament_id }}/rounds/{{ r.round_num }}/pairs/{{ m.slot }}/delete"
+                  hx-target="#tournament-body" hx-swap="innerHTML"
+                  hx-confirm="Delete this pairing?" class="inline">
+              <button class="px-3 py-2 rounded-lg bg-rose-500 hover:bg-rose-600 text-white text-xs font-bold shadow-md">🗑️</button>
+            </form>
+            {% endif %}
+          </div>
+        </div>
+
+        {% if not m.match_id %}
+        <!-- Edit form (hidden by default) -->
+        <form
+          hx-post="/tournaments/{{ tournament.tournament_id }}/rounds/{{ r.round_num }}/pairs/{{ m.slot }}/edit"
+          hx-target="#tournament-body"
+          hx-swap="innerHTML"
+          onchange="const dbl = this.querySelector('[name=match_type]').value === 'doubles'; this.querySelectorAll('.pair-doubles-only').forEach(el => el.classList.toggle('hidden', !dbl));"
+          class="pair-edit-panel hidden mt-2 p-3 bg-amber-50 rounded-lg border border-amber-200 space-y-2">
+          <div class="text-xs font-bold text-amber-800">✏️ Change who plays whom</div>
+          <select name="match_type" class="w-full rounded-lg border-2 border-amber-200 px-3 py-2 text-sm">
+            <option value="singles" {% if not is_doubles %}selected{% endif %}>Singles</option>
+            <option value="doubles" {% if is_doubles %}selected{% endif %} {% if (tournament.participants|length) < 4 %}disabled{% endif %}>Doubles</option>
+          </select>
+          <div class="grid grid-cols-2 gap-2">
+            <select name="participant_a" required class="rounded-lg border-2 border-amber-200 px-3 py-2 text-sm">
+              <option value="">— A1 —</option>
+              {% for p in tournament.participants %}<option value="{{ p.id }}" {% if p.id == m.a_id %}selected{% endif %}>{{ p.name }}</option>{% endfor %}
+            </select>
+            <select name="participant_b" required class="rounded-lg border-2 border-amber-200 px-3 py-2 text-sm">
+              <option value="">— B1 —</option>
+              {% for p in tournament.participants %}<option value="{{ p.id }}" {% if p.id == m.b_id %}selected{% endif %}>{{ p.name }}</option>{% endfor %}
+            </select>
+            <select name="participant_a2" class="pair-doubles-only {% if not is_doubles %}hidden{% endif %} rounded-lg border-2 border-amber-200 px-3 py-2 text-sm">
+              <option value="">— A2 —</option>
+              {% for p in tournament.participants %}<option value="{{ p.id }}" {% if p.id == m.a2_id %}selected{% endif %}>{{ p.name }}</option>{% endfor %}
+            </select>
+            <select name="participant_b2" class="pair-doubles-only {% if not is_doubles %}hidden{% endif %} rounded-lg border-2 border-amber-200 px-3 py-2 text-sm">
+              <option value="">— B2 —</option>
+              {% for p in tournament.participants %}<option value="{{ p.id }}" {% if p.id == m.b2_id %}selected{% endif %}>{{ p.name }}</option>{% endfor %}
+            </select>
+          </div>
+          <button class="w-full rounded-lg bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold px-3 py-2">💾 Save pairing</button>
+        </form>
+        {% endif %}
+      </div>
+      {% endfor %}
+    </div>
+    {% else %}
+    <p class="text-sm text-emerald-700">No matches in this round yet.</p>
+    {% endif %}
+  </div>
+  {% endfor %}
+</div>

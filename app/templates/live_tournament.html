@@ -1,0 +1,115 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1"/>
+    <meta http-equiv="refresh" content="10; url=/live/tournaments/{{ tournament.tournament_id }}"/>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <title>{{ tournament.name }} — Live Board</title>
+    <link rel="manifest" href="/static/manifest.json" />
+    <meta name="theme-color" content="#059669" />
+  </head>
+  <body class="bg-gradient-to-br from-emerald-100 via-teal-100 to-sky-100 min-h-screen">
+    <div class="max-w-4xl mx-auto p-3 sm:p-4">
+      <!-- Header -->
+      <div class="bg-white rounded-2xl border-2 border-emerald-200 shadow-xl p-4 sm:p-5">
+        <div class="text-center">
+          <div class="flex items-center justify-center gap-2 mb-1">
+            <span class="text-3xl">🏆</span>
+            <h1 class="text-2xl font-bold text-emerald-900">{{ tournament.name }}</h1>
+          </div>
+          <p class="text-emerald-700 text-sm font-medium">
+            {{ (tournament.participants or []) | length }} participants •
+            Bo{{ tournament.best_of }} • First to {{ tournament.points_to_win }}
+          </p>
+          <p class="text-xs text-emerald-600 mt-1">🔄 Auto-refresh every 10s</p>
+        </div>
+      </div>
+
+      {% set has_any = false %}
+      {% for r in rounds_view %}{% if r.matches %}{% set has_any = true %}{% endif %}{% endfor %}
+
+      {% if not has_any %}
+      <div class="mt-4 bg-white rounded-2xl border-2 border-emerald-200 shadow-lg p-6 text-center text-emerald-800">
+        No matches yet — check back when the tournament kicks off.
+      </div>
+      {% endif %}
+
+      {% for r in rounds_view %}
+      {% if r.matches %}
+      <div class="mt-4 bg-white rounded-2xl border-2 border-emerald-200 shadow-lg p-4">
+        <div class="flex items-center justify-between mb-3">
+          <h2 class="text-lg font-bold text-emerald-900">{{ r.name }}</h2>
+          <span class="text-xs px-2 py-1 rounded-full bg-emerald-100 text-emerald-700 font-bold">Round {{ r.round_num }}</span>
+        </div>
+
+        <div class="space-y-2">
+          {% for m in r.matches %}
+          {% set is_doubles = m.match_type == 'doubles' %}
+          {% set status_cls = 'border-emerald-200 bg-white' %}
+          {% if m.status == 'live' %}{% set status_cls = 'border-sky-300 bg-sky-50 ring-2 ring-sky-200' %}{% endif %}
+          {% if m.status == 'finished' %}{% set status_cls = 'border-amber-300 bg-amber-50' %}{% endif %}
+
+          {% if m.match_id %}
+          <a href="/live/{{ m.match_id }}" class="block rounded-xl border-2 {{ status_cls }} p-3 hover:shadow-md transition-all">
+          {% else %}
+          <div class="rounded-xl border-2 {{ status_cls }} p-3 opacity-70">
+          {% endif %}
+            <div class="flex items-center justify-between gap-2 flex-wrap">
+              <div class="flex-1 min-w-0">
+                <div class="flex items-center gap-2 flex-wrap">
+                  <span class="text-[10px] px-2 py-0.5 rounded-full border {% if is_doubles %}bg-fuchsia-50 text-fuchsia-700 border-fuchsia-200{% else %}bg-emerald-50 text-emerald-700 border-emerald-200{% endif %} font-bold">{{ 'DOUBLES' if is_doubles else 'SINGLES' }}</span>
+                  {% if m.status == 'live' %}
+                    <span class="text-[10px] px-2 py-0.5 rounded-full bg-sky-100 text-sky-700 border border-sky-300 font-bold animate-pulse">🔴 LIVE</span>
+                  {% elif m.status == 'finished' %}
+                    <span class="text-[10px] px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 border border-amber-300 font-bold">✅ FINAL</span>
+                  {% else %}
+                    <span class="text-[10px] px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 border border-slate-200 font-bold">⏳ PENDING</span>
+                  {% endif %}
+                  {% if m.is_deciding_game %}<span class="text-[10px] px-2 py-0.5 rounded-full bg-fuchsia-100 text-fuchsia-700 border border-fuchsia-300 font-bold">DECIDING</span>{% endif %}
+                  {% if m.is_deuce %}<span class="text-[10px] px-2 py-0.5 rounded-full bg-rose-100 text-rose-700 border border-rose-300 font-bold">DEUCE</span>{% endif %}
+                </div>
+                <div class="mt-1 font-bold text-emerald-900 truncate">
+                  {% if is_doubles %}
+                    {{ m.a_name }} / {{ m.a2_name }}
+                    <span class="text-slate-400">vs</span>
+                    {{ m.b_name }} / {{ m.b2_name }}
+                  {% else %}
+                    {{ m.a_name }} <span class="text-slate-400">vs</span> {{ m.b_name }}
+                  {% endif %}
+                </div>
+                {% if m.winner_name %}
+                  <div class="text-xs text-amber-800 font-bold mt-0.5">🏆 {{ m.winner_name }}</div>
+                {% endif %}
+              </div>
+
+              {% if m.match_id %}
+              <div class="text-right shrink-0">
+                <div class="font-mono text-3xl font-black text-emerald-800 leading-none">
+                  {{ m.a_score }} <span class="text-slate-400">—</span> {{ m.b_score }}
+                </div>
+                <div class="text-[11px] text-emerald-700 font-bold mt-1">
+                  Games: {{ m.a_games }}–{{ m.b_games }} • Game {{ m.current_game_num }}
+                </div>
+              </div>
+              {% else %}
+              <div class="text-right shrink-0 text-xs text-slate-500 font-bold">not started</div>
+              {% endif %}
+            </div>
+          {% if m.match_id %}
+          </a>
+          {% else %}
+          </div>
+          {% endif %}
+          {% endfor %}
+        </div>
+      </div>
+      {% endif %}
+      {% endfor %}
+
+      <div class="mt-4 text-center pb-4">
+        <p class="text-sm text-emerald-700 font-medium">🏓 <span class="font-bold bg-gradient-to-r from-emerald-600 to-teal-600 bg-clip-text text-transparent">Table Tennis Scorer</span></p>
+      </div>
+    </div>
+  </body>
+</html>

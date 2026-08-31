@@ -1,0 +1,87 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1"/>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/htmx.org@1.9.12"></script>
+    <title>Admin — TT Scorer</title>
+    <link rel="manifest" href="/static/manifest.json" />
+    <meta name="theme-color" content="#059669" />
+  </head>
+  <body class="bg-gradient-to-br from-rose-100 via-orange-100 to-amber-100 min-h-screen">
+    <div class="max-w-4xl mx-auto p-3 sm:p-4">
+      <div class="bg-white rounded-2xl border-2 border-rose-300 shadow-2xl p-5">
+        <div class="flex items-center justify-between mb-6 flex-wrap gap-2">
+          <div class="flex items-center gap-3">
+            <span class="text-3xl">👑</span>
+            <div>
+              <h1 class="text-2xl font-bold text-rose-900">Admin Panel</h1>
+              <p class="text-sm text-rose-700">Manage users, matches, and tournaments</p>
+            </div>
+          </div>
+          <a href="/" class="px-3 py-2 rounded-xl bg-gradient-to-r from-slate-500 to-slate-600 text-white font-bold shadow-md">← Home</a>
+        </div>
+
+        <!-- Scoring defaults (service change, points, best-of) -->
+        {% include "partials/settings_form.html" %}
+
+        <!-- Player roster (used in tournament participant picker) -->
+        {% include "partials/roster.html" %}
+
+        <!-- Matches -->
+        <div class="bg-emerald-50 rounded-2xl border-2 border-emerald-300 p-4 mb-4">
+          <h2 class="text-lg font-bold text-emerald-900 mb-3">🏓 Matches ({{ matches|length }})</h2>
+          {% if matches %}
+          <div class="space-y-2">
+            {% for m in matches %}
+            <div class="bg-white rounded-xl border-2 border-emerald-200 p-3 flex items-center justify-between gap-2 flex-wrap">
+              <div class="flex-1 min-w-0">
+                <div class="font-bold text-slate-800 truncate">{{ m.name }}</div>
+                <div class="text-xs text-slate-600">{{ m.player_a }} vs {{ m.player_b }} • Bo{{ m.best_of }} • {{ m.created_at[:10] }}</div>
+              </div>
+              <div class="flex gap-2">
+                <a href="/matches/{{ m.match_id }}" class="px-3 py-2 rounded-lg bg-blue-600 text-white text-xs font-bold shadow-md">View</a>
+                <form hx-post="/admin/matches/{{ m.match_id }}/delete" hx-target="closest .bg-white" hx-swap="outerHTML" hx-confirm="Delete '{{ m.name }}'?">
+                  <button class="px-3 py-2 rounded-lg bg-gradient-to-r from-rose-500 to-red-600 text-white text-xs font-bold shadow-md">🗑️</button>
+                </form>
+              </div>
+            </div>
+            {% endfor %}
+          </div>
+          {% else %}<p class="text-emerald-700 text-sm">No matches yet.</p>{% endif %}
+        </div>
+
+        <!-- Tournaments -->
+        <div class="bg-sky-50 rounded-2xl border-2 border-sky-300 p-4 mb-4">
+          <h2 class="text-lg font-bold text-sky-900 mb-3">🏆 Tournaments ({{ tournaments|length }})</h2>
+          {% if tournaments %}
+          <div class="space-y-2">
+            {% for t in tournaments %}
+            <div class="bg-white rounded-xl border-2 border-sky-200 p-3 flex items-center justify-between gap-2 flex-wrap">
+              <div class="flex-1 min-w-0">
+                <div class="font-bold text-slate-800 truncate">{{ t.name }}</div>
+                <div class="text-xs text-slate-600">{{ (t.participants or [])|length }} participants • {{ (t.rounds or [])|length }} rounds • {{ t.created_at[:10] }}</div>
+              </div>
+              <div class="flex gap-2">
+                <a href="/tournaments/{{ t.tournament_id }}" class="px-3 py-2 rounded-lg bg-blue-600 text-white text-xs font-bold shadow-md">View</a>
+                <form hx-post="/admin/tournaments/{{ t.tournament_id }}/delete" hx-target="closest .bg-white" hx-swap="outerHTML" hx-confirm="Delete '{{ t.name }}'?">
+                  <button class="px-3 py-2 rounded-lg bg-gradient-to-r from-rose-500 to-red-600 text-white text-xs font-bold shadow-md">🗑️</button>
+                </form>
+              </div>
+            </div>
+            {% endfor %}
+          </div>
+          {% else %}<p class="text-sky-700 text-sm">No tournaments yet.</p>{% endif %}
+        </div>
+
+        <!-- Users -->
+        {% include "partials/user_management.html" %}
+      </div>
+
+      <div class="mt-4 text-center pb-4">
+        <p class="text-sm text-rose-700 font-medium">🏓 <span class="font-bold bg-gradient-to-r from-rose-600 to-orange-600 bg-clip-text text-transparent">Table Tennis Scorer</span></p>
+      </div>
+    </div>
+  </body>
+</html>

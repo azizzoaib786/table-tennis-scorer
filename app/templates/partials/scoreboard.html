@@ -1,0 +1,185 @@
+<div id="scoreboard-inner" class="space-y-4">
+  {% if flash %}
+    <div id="flash-banner"
+         data-service-change="{{ '1' if state.service_change else '0' }}"
+         data-side-change="{{ '1' if state.side_change_alert else '0' }}"
+         data-match-over="{{ '1' if state.match_winner else '0' }}"
+         class="{% if state.match_winner %}bg-gradient-to-r from-amber-100 to-orange-100 border-amber-400 text-amber-900{% elif state.side_change_alert %}bg-gradient-to-r from-fuchsia-100 to-rose-100 border-fuchsia-400 text-fuchsia-900{% elif state.service_change %}bg-gradient-to-r from-sky-100 to-indigo-100 border-sky-400 text-sky-900{% else %}bg-white border-emerald-300 text-emerald-900{% endif %} rounded-2xl border-2 shadow-md p-4 text-center text-lg font-bold">
+      {{ flash }}
+    </div>
+  {% endif %}
+
+  <!-- Games / Match score card -->
+  <div class="bg-white rounded-2xl border-2 border-emerald-200 shadow-lg p-4 sm:p-5">
+    <div class="flex items-center justify-between mb-3">
+      <div class="text-sm font-bold text-emerald-800">
+        Games
+        <span class="ml-1 px-2 py-0.5 rounded-full text-[10px] font-bold border {% if state.is_doubles %}bg-fuchsia-50 text-fuchsia-700 border-fuchsia-200{% else %}bg-emerald-50 text-emerald-700 border-emerald-200{% endif %}">{{ 'DOUBLES' if state.is_doubles else 'SINGLES' }}</span>
+      </div>
+      <div class="text-sm font-semibold text-emerald-700">
+        Game <span class="text-emerald-900 font-bold">{{ state.current_game_num }}</span>
+        {% if state.is_deciding_game %}
+          <span class="ml-1 px-2 py-0.5 rounded-full bg-fuchsia-100 text-fuchsia-700 text-xs font-bold border border-fuchsia-300">DECIDING</span>
+        {% endif %}
+        {% if state.is_deuce %}
+          <span class="ml-1 px-2 py-0.5 rounded-full bg-rose-100 text-rose-700 text-xs font-bold border border-rose-300 animate-pulse">DEUCE</span>
+        {% endif %}
+      </div>
+    </div>
+
+    <div class="grid grid-cols-2 gap-3">
+      {# Team A #}
+      <div class="rounded-2xl border-2 {% if state.match_winner == 'A' %}border-amber-400 bg-amber-50{% elif state.server == 'A' %}border-emerald-400 bg-emerald-50{% else %}border-slate-200 bg-white{% endif %} p-3 text-center shadow-sm">
+        <div class="flex items-center justify-center gap-1 mb-1">
+          {% if state.server == 'A' and not state.match_winner %}<span class="text-xl">🏓</span>{% endif %}
+          <div class="font-bold text-emerald-900 truncate">{{ match.player_a }}</div>
+        </div>
+        {% if state.is_doubles %}
+          <div class="text-xs text-emerald-700 truncate">/ {{ match.player_a2 }}</div>
+        {% endif %}
+        <div class="text-5xl sm:text-6xl font-black text-emerald-700 leading-none py-2">{{ state.a_score }}</div>
+        <div class="text-xs font-bold text-emerald-700 mt-1">Games: {{ state.a_games }}</div>
+        {% if state.match_winner == 'A' %}<div class="mt-1 text-xs font-bold text-amber-700">🏆 WINNER</div>{% endif %}
+      </div>
+      {# Team B #}
+      <div class="rounded-2xl border-2 {% if state.match_winner == 'B' %}border-amber-400 bg-amber-50{% elif state.server == 'B' %}border-emerald-400 bg-emerald-50{% else %}border-slate-200 bg-white{% endif %} p-3 text-center shadow-sm">
+        <div class="flex items-center justify-center gap-1 mb-1">
+          {% if state.server == 'B' and not state.match_winner %}<span class="text-xl">🏓</span>{% endif %}
+          <div class="font-bold text-emerald-900 truncate">{{ match.player_b }}</div>
+        </div>
+        {% if state.is_doubles %}
+          <div class="text-xs text-emerald-700 truncate">/ {{ match.player_b2 }}</div>
+        {% endif %}
+        <div class="text-5xl sm:text-6xl font-black text-emerald-700 leading-none py-2">{{ state.b_score }}</div>
+        <div class="text-xs font-bold text-emerald-700 mt-1">Games: {{ state.b_games }}</div>
+        {% if state.match_winner == 'B' %}<div class="mt-1 text-xs font-bold text-amber-700">🏆 WINNER</div>{% endif %}
+      </div>
+    </div>
+
+    <!-- Point buttons -->
+    {% if user and not state.match_winner %}
+    <div class="grid grid-cols-2 gap-3 mt-4">
+      <button
+        hx-post="/matches/{{ match.match_id }}/point/A"
+        hx-target="#scoreboard"
+        hx-swap="innerHTML"
+        class="rounded-2xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white py-6 text-2xl font-black shadow-lg active:scale-95 transition-transform">
+        +1 {{ match.player_a }}{% if state.is_doubles %} / {{ match.player_a2 }}{% endif %}
+      </button>
+      <button
+        hx-post="/matches/{{ match.match_id }}/point/B"
+        hx-target="#scoreboard"
+        hx-swap="innerHTML"
+        class="rounded-2xl bg-gradient-to-r from-sky-500 to-indigo-600 hover:from-sky-600 hover:to-indigo-700 text-white py-6 text-2xl font-black shadow-lg active:scale-95 transition-transform">
+        +1 {{ match.player_b }}{% if state.is_doubles %} / {{ match.player_b2 }}{% endif %}
+      </button>
+    </div>
+    {% endif %}
+
+    {% if user %}
+    <div class="mt-3 flex gap-2 flex-wrap">
+      <button
+        hx-post="/matches/{{ match.match_id }}/undo"
+        hx-target="#scoreboard"
+        hx-swap="innerHTML"
+        hx-confirm="Undo last action?"
+        class="flex-1 rounded-xl bg-white border-2 border-slate-300 text-slate-700 font-bold py-3 shadow-sm">↩️ Undo</button>
+      {% if not state.match_winner %}
+      <button
+        hx-post="/matches/{{ match.match_id }}/let"
+        hx-target="#scoreboard"
+        hx-swap="innerHTML"
+        class="flex-1 rounded-xl bg-white border-2 border-amber-300 text-amber-700 font-bold py-3 shadow-sm">🌐 Let</button>
+      {% endif %}
+      {% if state.match_winner and (user.is_admin or user.user_id == match.user_id) %}
+      <form method="post" action="/matches/{{ match.match_id }}/delete" class="flex-1">
+        <button onclick="return confirm('Delete this match permanently?')" class="w-full rounded-xl bg-gradient-to-r from-rose-500 to-red-600 text-white font-bold py-3 shadow-md">🗑️ Delete Match</button>
+      </form>
+      {% endif %}
+    </div>
+    {% endif %}
+  </div>
+
+  <!-- Server / receiver indicator -->
+  {% if not state.match_winner %}
+  <div class="bg-white rounded-2xl border-2 {% if state.side_change_alert %}border-fuchsia-400 bg-fuchsia-50{% elif state.service_change %}border-sky-400 bg-sky-50{% else %}border-emerald-200{% endif %} shadow-md p-4 text-center">
+    <div class="text-xs font-bold uppercase tracking-wider text-slate-500">Next Serve</div>
+    <div class="mt-1 text-2xl font-bold text-emerald-900 flex items-center justify-center gap-2">
+      <span class="text-3xl">🏓</span>
+      <span>{{ state.server_name or (match.player_a if state.server == 'A' else match.player_b) }}</span>
+    </div>
+    {% if state.is_doubles and state.receiver_name %}
+      <div class="mt-1 text-sm text-slate-600">↳ receiving: <span class="font-bold text-emerald-800">{{ state.receiver_name }}</span></div>
+      <div class="text-[10px] text-fuchsia-600 mt-0.5">Doubles: diagonal serve • partners alternate shots</div>
+    {% endif %}
+    {% if state.service_change %}
+    <div class="mt-1 text-xs font-bold text-sky-700">🔁 Service just changed</div>
+    {% endif %}
+    {% if state.side_change_alert %}
+    <div class="mt-1 text-xs font-bold text-fuchsia-700">🔀 CHANGE ENDS (deciding game)</div>
+    {% endif %}
+  </div>
+  {% endif %}
+
+  <!-- Finished games summary -->
+  {% if state.games %}
+  <div class="bg-white rounded-2xl border-2 border-emerald-200 shadow-lg p-4">
+    <div class="text-sm font-bold text-emerald-800 mb-2">Games completed</div>
+    <div class="space-y-1">
+      {% for g in state.games %}
+      <div class="flex items-center justify-between rounded-lg bg-emerald-50 border border-emerald-100 px-3 py-2 text-sm">
+        <span class="font-bold text-emerald-800">Game {{ g.game_num }}</span>
+        <span class="font-mono {% if g.winner == 'A' %}text-emerald-700 font-bold{% else %}text-slate-600{% endif %}">{{ g.a }}</span>
+        <span class="text-slate-400">—</span>
+        <span class="font-mono {% if g.winner == 'B' %}text-sky-700 font-bold{% else %}text-slate-600{% endif %}">{{ g.b }}</span>
+        <span class="text-xs px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 font-bold">🏆 {{ match.player_a if g.winner == 'A' else match.player_b }}</span>
+      </div>
+      {% endfor %}
+    </div>
+    {% if state.let_count %}
+      <div class="mt-2 text-[11px] text-amber-700">🌐 Lets recorded this match: <span class="font-bold">{{ state.let_count }}</span></div>
+    {% endif %}
+  </div>
+  {% endif %}
+
+  <!-- Edit players (only for scorer, only before any point) -->
+  {% if user and state.total_points == 0 and not state.match_winner %}
+  <details class="bg-white rounded-2xl border-2 border-slate-200 p-4">
+    <summary class="cursor-pointer text-sm font-bold text-slate-700">✏️ Edit players / link to accounts</summary>
+    <form
+      hx-post="/matches/{{ match.match_id }}/players"
+      hx-target="#scoreboard"
+      hx-swap="innerHTML"
+      class="mt-3 space-y-2">
+      <div class="grid grid-cols-2 gap-2">
+        <input name="player_a" value="{{ match.player_a }}" placeholder="Player A name" class="rounded-lg border-2 border-slate-200 px-3 py-2 text-sm"/>
+        <input name="player_b" value="{{ match.player_b }}" placeholder="Player B name" class="rounded-lg border-2 border-slate-200 px-3 py-2 text-sm"/>
+      </div>
+      {% if state.is_doubles %}
+      <div class="grid grid-cols-2 gap-2">
+        <input name="player_a2" value="{{ match.get('player_a2', '') }}" placeholder="Partner A2 name" class="rounded-lg border-2 border-slate-200 px-3 py-2 text-sm"/>
+        <input name="player_b2" value="{{ match.get('player_b2', '') }}" placeholder="Partner B2 name" class="rounded-lg border-2 border-slate-200 px-3 py-2 text-sm"/>
+      </div>
+      {% endif %}
+      <div class="grid grid-cols-2 gap-2">
+        <input name="player_a_id" value="{{ match.get('player_a_id', '') }}" placeholder="Player A user_id (optional)" class="rounded-lg border-2 border-slate-200 px-3 py-2 text-xs font-mono"/>
+        <input name="player_b_id" value="{{ match.get('player_b_id', '') }}" placeholder="Player B user_id (optional)" class="rounded-lg border-2 border-slate-200 px-3 py-2 text-xs font-mono"/>
+      </div>
+      <button class="w-full rounded-xl bg-emerald-600 text-white font-bold py-2">Save</button>
+    </form>
+  </details>
+  {% endif %}
+</div>
+
+<script>
+  (function() {
+    var banner = document.getElementById('flash-banner');
+    if (!banner) return;
+    var changed = banner.getAttribute('data-service-change') === '1';
+    var side = banner.getAttribute('data-side-change') === '1';
+    var over = banner.getAttribute('data-match-over') === '1';
+    if (changed && navigator.vibrate) { navigator.vibrate([80, 40, 80]); }
+    if (side && navigator.vibrate) { navigator.vibrate([120, 60, 120, 60, 120]); }
+    if (over && navigator.vibrate) { navigator.vibrate([200, 80, 200, 80, 200]); }
+  })();
+</script>
