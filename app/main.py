@@ -585,6 +585,35 @@ def match_page(request: Request, match_id: str):
     return templates.TemplateResponse("match.html", ctx)
 
 
+@app.get("/live", response_class=HTMLResponse)
+def live_index(request: Request):
+    """Public index of currently-live (in-progress) matches."""
+    all_m = list_matches(limit=200)
+    live_rows = []
+    for m in all_m:
+        ev = list_events(m["match_id"])
+        st = compute_state(m, ev)
+        if st.get("match_winner"):
+            continue  # skip completed
+        live_rows.append({
+            "match_id": m["match_id"],
+            "name": m.get("name", "Match"),
+            "player_a": m.get("player_a", "A"),
+            "player_b": m.get("player_b", "B"),
+            "score_a": st.get("current_game_a", 0),
+            "score_b": st.get("current_game_b", 0),
+            "games_a": st.get("games_a", 0),
+            "games_b": st.get("games_b", 0),
+            "current_game_num": st.get("current_game_num", 1),
+            "best_of": m.get("best_of", 5),
+            "is_doubles": st.get("is_doubles", False),
+        })
+    live_rows.sort(key=lambda r: r["name"].lower())
+    return templates.TemplateResponse("live_index.html", {
+        "request": request, "matches": live_rows,
+    })
+
+
 @app.get("/live/{match_id}", response_class=HTMLResponse)
 def live_match(request: Request, match_id: str):
     match = must_match(match_id)
