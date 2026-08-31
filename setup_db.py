@@ -142,7 +142,7 @@ def create_admin_user():
         print("╚══════════════════════════════════════════════════════════════╝")
     else:
         print("Used TT_ADMIN_PASSWORD env var (value not printed).")
- in as admin using the password printed above (or the one you set via TT_ADMIN_PASSWORD).
+
 
 if __name__ == "__main__":
     print("Setting up Table Tennis Scorer database...")
