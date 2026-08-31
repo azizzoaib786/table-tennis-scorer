@@ -321,6 +321,9 @@ def admin_panel(request: Request):
         "request": request, "user": admin,
         "settings": get_settings(),
         "roster": list_roster(),
+        "matches": all_matches,
+        "users": all_users,
+        "tournaments": all_tournaments,
     })
 
 
