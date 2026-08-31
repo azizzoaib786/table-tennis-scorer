@@ -6,7 +6,7 @@ import uuid
 
 import boto3
 
-AWS_REGION = os.getenv("AWS_REGION", "me-central-1")
+AWS_REGION = os.getenv("AWS_REGION", "eu-west-1")
 
 ddb = boto3.client("dynamodb", region_name=AWS_REGION)
 

@@ -4,7 +4,7 @@ from boto3.dynamodb.conditions import Key, Attr
 from typing import Any, Dict, List, Optional
 
 # AWS configuration
-AWS_REGION = os.getenv("AWS_REGION", "me-central-1")
+AWS_REGION = os.getenv("AWS_REGION", "eu-west-1")
 MATCHES_TABLE = os.getenv("MATCHES_TABLE", "tt_matches")
 EVENTS_TABLE = os.getenv("EVENTS_TABLE", "tt_events")
 USERS_TABLE = os.getenv("USERS_TABLE", "tt_users")

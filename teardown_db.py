@@ -3,7 +3,7 @@
 import os
 import boto3
 
-AWS_REGION = os.getenv("AWS_REGION", "me-central-1")
+AWS_REGION = os.getenv("AWS_REGION", "eu-west-1")
 TABLES = ["tt_users", "tt_matches", "tt_events", "tt_tournaments", "tt_settings", "tt_roster"]
 
 if __name__ == "__main__":

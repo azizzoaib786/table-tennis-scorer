@@ -22,7 +22,7 @@ REPO_URL="${REPO_URL:-git@github.com:azizzoaib786/table-tennis-scorer.git}"
 DOMAIN="tt.azizzoaib.com"
 CERTBOT_EMAIL="aziz@azizzoaib.com"
 
-AWS_REGION="me-central-1"
+AWS_REGION="eu-west-1"
 MATCHES_TABLE="tt_matches"
 EVENTS_TABLE="tt_events"
 USERS_TABLE="tt_users"

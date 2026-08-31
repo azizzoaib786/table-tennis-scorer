@@ -149,7 +149,7 @@ Every automated rule can also be verified by hand from the UI. Bring up a
 local dev server and click through these scenarios.
 
 ```bash
-export AWS_REGION=me-central-1
+export AWS_REGION=eu-west-1
 python setup_db.py           # only the first time
 uvicorn app.main:app --reload --host 0.0.0.0 --port 8002
 ```
@@ -337,7 +337,7 @@ Alice / Amy vs Bob / Ben    (doubles, slash)
 
 | Var | Default | Purpose |
 |---|---|---|
-| `AWS_REGION` | `me-central-1` | DynamoDB region. |
+| `AWS_REGION` | `eu-west-1` | DynamoDB region. |
 | `MATCHES_TABLE` | `tt_matches` | Table name. |
 | `EVENTS_TABLE` | `tt_events` | Table name. |
 | `USERS_TABLE` | `tt_users` | Table name. |

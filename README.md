@@ -31,7 +31,7 @@ source .venv/bin/activate
 pip install -r requirements.txt -r requirements-dev.txt   # dev deps include pytest
 
 # Configure AWS creds (env vars, ~/.aws/credentials, or IAM role)
-export AWS_REGION=me-central-1
+export AWS_REGION=eu-west-1
 
 python setup_db.py       # creates the tt_* tables + default admin
 uvicorn app.main:app --reload --host 0.0.0.0 --port 8002
