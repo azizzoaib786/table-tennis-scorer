@@ -92,6 +92,9 @@ def seed_default_settings():
         "default_points_to_win": 11,
         "service_interval": 2,
         "deuce_interval": 1,
+        "deciding_side_change_at": 5,
+        "hard_cap_enabled": False,
+        "hard_cap_at": 15,
     })
     print("Seeded default global settings")
 

@@ -53,6 +53,8 @@ def compute_state(match: dict, all_events: List[dict]) -> dict:
     service_interval = max(1, int(match.get("service_interval", 2)))
     deuce_interval = max(1, int(match.get("deuce_interval", 1)))
     deciding_side_change_at = int(match.get("deciding_side_change_at", 5))
+    hard_cap_enabled = bool(match.get("hard_cap_enabled", False))
+    hard_cap_at = int(match.get("hard_cap_at", 15))
     target_games = best_of // 2 + 1
     match_type = match.get("match_type", "singles")
     is_doubles = match_type == "doubles"
@@ -163,9 +165,15 @@ def compute_state(match: dict, all_events: List[dict]) -> dict:
         })
 
         game_winner: Optional[str] = None
+        # Normal win-by-2 at points_to_win.
         if a_score >= points_to_win and a_score - b_score >= 2:
             game_winner = "A"
         elif b_score >= points_to_win and b_score - a_score >= 2:
+            game_winner = "B"
+        # Hard-cap override: first to reach the cap wins outright, no lead required.
+        elif hard_cap_enabled and a_score >= hard_cap_at:
+            game_winner = "A"
+        elif hard_cap_enabled and b_score >= hard_cap_at:
             game_winner = "B"
 
         if game_winner:

@@ -251,6 +251,8 @@ DEFAULT_SETTINGS: Dict[str, Any] = {
     "deuce_interval": 1,     # at deuce serve rotates every N points
     "default_match_type": "singles",  # "singles" | "doubles"
     "deciding_side_change_at": 5,     # ends change at N pts in the deciding game (0 disables)
+    "hard_cap_enabled": False,        # if True, first to hard_cap_at wins (overrides win-by-2)
+    "hard_cap_at": 15,                # score at which hard cap triggers
 }
 
 
@@ -268,6 +270,12 @@ def get_settings() -> Dict[str, Any]:
             merged[k] = int(DEFAULT_SETTINGS[k])
     if merged.get("default_match_type") not in ("singles", "doubles"):
         merged["default_match_type"] = "singles"
+    # Hard-cap fields
+    merged["hard_cap_enabled"] = bool(merged.get("hard_cap_enabled", False))
+    try:
+        merged["hard_cap_at"] = int(merged.get("hard_cap_at", 15))
+    except Exception:
+        merged["hard_cap_at"] = 15
     return merged
 
 

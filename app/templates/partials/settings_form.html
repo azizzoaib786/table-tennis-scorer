@@ -52,6 +52,20 @@
         <input type="number" name="deciding_side_change_at" min="0" max="20" value="{{ settings.deciding_side_change_at }}" class="mt-1 w-full rounded-xl border-2 border-teal-200 focus:border-teal-400 px-3 py-2"/>
         <p class="text-[10px] text-teal-600 mt-0.5">ITTF = 5. Set 0 to disable.</p>
       </div>
+      <div class="col-span-2 border-t border-teal-200 pt-3 mt-1">
+        <label class="flex items-center gap-2 text-xs font-bold text-teal-900 cursor-pointer">
+          <input type="checkbox" name="hard_cap_enabled" value="on" {% if settings.hard_cap_enabled %}checked{% endif %} class="rounded border-teal-300 text-teal-600 focus:ring-teal-400"/>
+          Enable hard cap (first to reach cap wins outright)
+        </label>
+        <p class="text-[10px] text-teal-600 mt-0.5 ml-6">
+          Overrides win-by-2 once someone reaches the cap. Prevents endless deuce games.
+        </p>
+      </div>
+      <div class="col-span-2">
+        <label class="text-xs font-bold text-teal-900">Hard cap at</label>
+        <input type="number" name="hard_cap_at" min="5" max="99" value="{{ settings.hard_cap_at }}" class="mt-1 w-full rounded-xl border-2 border-teal-200 focus:border-teal-400 px-3 py-2"/>
+        <p class="text-[10px] text-teal-600 mt-0.5">Default 15. Increase to 17, 21, etc. Ignored when toggle is off.</p>
+      </div>
     </div>
     <button class="w-full rounded-xl bg-gradient-to-r from-teal-600 to-emerald-600 text-white font-bold py-3 shadow-md">💾 Save Settings</button>
   </form>

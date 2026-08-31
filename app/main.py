@@ -331,7 +331,9 @@ async def admin_update_settings(request: Request,
                                  service_interval: int = Form(2),
                                  deuce_interval: int = Form(1),
                                  default_match_type: str = Form("singles"),
-                                 deciding_side_change_at: int = Form(5)):
+                                 deciding_side_change_at: int = Form(5),
+                                 hard_cap_enabled: str = Form(""),
+                                 hard_cap_at: int = Form(15)):
     require_admin(request)
     if default_best_of not in (1, 3, 5, 7):
         raise HTTPException(400, "default_best_of must be 1, 3, 5, or 7")
@@ -343,6 +345,8 @@ async def admin_update_settings(request: Request,
         raise HTTPException(400, "default_match_type must be 'singles' or 'doubles'")
     if deciding_side_change_at < 0:
         raise HTTPException(400, "deciding_side_change_at must be >= 0 (0 disables)")
+    if hard_cap_at < 5:
+        raise HTTPException(400, "hard_cap_at must be at least 5")
     update_settings({
         "default_best_of": int(default_best_of),
         "default_points_to_win": int(default_points_to_win),
@@ -350,6 +354,8 @@ async def admin_update_settings(request: Request,
         "deuce_interval": int(deuce_interval),
         "default_match_type": default_match_type,
         "deciding_side_change_at": int(deciding_side_change_at),
+        "hard_cap_enabled": hard_cap_enabled in ("on", "true", "1", "yes"),
+        "hard_cap_at": int(hard_cap_at),
     })
     return templates.TemplateResponse("partials/settings_form.html", {
         "request": request,
@@ -387,14 +393,14 @@ async def admin_delete_roster(request: Request, player_id: str):
 async def admin_delete_match(request: Request, match_id: str):
     require_admin(request)
     delete_match(match_id)
-    return HTMLResponse("", status_code=200)
+    return HTMLResponse("", status_code=200, headers={"HX-Refresh": "true"})
 
 
 @app.post("/admin/tournaments/{tournament_id}/delete")
 async def admin_delete_tournament(request: Request, tournament_id: str):
     require_admin(request)
     delete_tournament(tournament_id)
-    return HTMLResponse("", status_code=200)
+    return HTMLResponse("", status_code=200, headers={"HX-Refresh": "true"})
 
 
 @app.post("/admin/users/{user_id}/toggle-active")
@@ -500,6 +506,10 @@ def create_match(request: Request,
     deuce_interval = int(deuce_interval) or int(cfg["deuce_interval"])
     if deciding_side_change_at < 0:
         deciding_side_change_at = int(cfg.get("deciding_side_change_at", 5))
+    # Snapshot the hard-cap rule onto the match so changing global settings
+    # later won't retroactively alter finished/in-progress matches.
+    hard_cap_enabled = bool(cfg.get("hard_cap_enabled", False))
+    hard_cap_at = int(cfg.get("hard_cap_at", 15))
     if match_type not in ("singles", "doubles"):
         match_type = cfg.get("default_match_type", "singles")
 
@@ -531,6 +541,8 @@ def create_match(request: Request,
         "service_interval": int(service_interval),
         "deuce_interval": int(deuce_interval),
         "deciding_side_change_at": int(deciding_side_change_at),
+        "hard_cap_enabled": hard_cap_enabled,
+        "hard_cap_at": hard_cap_at,
         "first_server": first_server,
         "created_at": now_ts(),
         "user_id": user["user_id"],
@@ -783,6 +795,12 @@ def add_participant(request: Request, tournament_id: str,
                     name: str = Form(""), user_id: str = Form(""),
                     roster_player_id: str = Form("")):
     user, t = check_tournament_access(request, tournament_id)
+
+    # If the user pasted comma/semicolon/newline-separated names into the single
+    # "Add" input, route through the bulk logic instead so all get added.
+    if not roster_player_id and not user_id and ("," in name or ";" in name or "\n" in name):
+        return bulk_add_participants(request, tournament_id, names=name)
+
     display_name = name.strip()
     linked_user_id = user_id or ""
     if roster_player_id:
