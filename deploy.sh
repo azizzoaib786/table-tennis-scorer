@@ -1,14 +1,14 @@
 #!/bin/bash
 # =============================================================================
 # table-tennis-scorer — EC2 deploy / redeploy script
-# Deploys FastAPI app at https://tabletennis.azizzoaib.com
+# Deploys FastAPI app at https://tt.azizzoaib.com
 # Idempotent — safe to re-run.
 #
 # Prerequisites on the EC2:
 #   - python3, pip, nginx, certbot, python3-certbot-nginx, git
 #     (installed by Terraform user_data in zizabot/terraform/ec2)
 #   - Ports 80/443 open in the security group
-#   - DNS A record for tabletennis.azizzoaib.com → this EC2's public IP
+#   - DNS A record for tt.azizzoaib.com → this EC2's public IP
 # =============================================================================
 set -euo pipefail
 
@@ -19,7 +19,7 @@ SERVICE_NAME="table-tennis-scorer"
 APP_PORT="8002"
 REPO_URL="${REPO_URL:-git@github.com:azizzoaib786/table-tennis-scorer.git}"
 
-DOMAIN="tabletennis.azizzoaib.com"
+DOMAIN="tt.azizzoaib.com"
 CERTBOT_EMAIL="aziz@azizzoaib.com"
 
 AWS_REGION="me-central-1"

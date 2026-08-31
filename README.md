@@ -181,12 +181,12 @@ awards the point manually, which is the standard workflow:
 - Partners alternating shots in doubles.
 - Volley / double-bounce / hitting the net for point loss.
 
-## Deploy to EC2 (Amazon Linux) — `tabletennis.azizzoaib.com`
+## Deploy to EC2 (Amazon Linux) — `tt.azizzoaib.com`
 
 Same pattern as `52patta.azizzoaib.com` (iquitscorer). One EC2 host, Nginx virtual
 host per subdomain, uvicorn on a unique port (`8002` here), Let's Encrypt SSL.
 
-**1. DNS.** Create an A record `tabletennis.azizzoaib.com` → EC2 public IP (Route 53
+**1. DNS.** Create an A record `tt.azizzoaib.com` → EC2 public IP (Route 53
 or wherever azizzoaib.com is hosted).
 
 **2. Security group.** Ensure inbound TCP `80` and `443` are open on the EC2.
@@ -194,7 +194,7 @@ or wherever azizzoaib.com is hosted).
 **3. Edit `deploy.sh`** and set:
 - `REPO_URL` — your GitHub repo
 - `CERTBOT_EMAIL` — your email for Let's Encrypt notices
-- (`DOMAIN` is already `tabletennis.azizzoaib.com`)
+- (`DOMAIN` is already `tt.azizzoaib.com`)
 
 **4. Run it on the EC2:**
 ```bash
@@ -202,7 +202,7 @@ bash deploy.sh
 ```
 
 The script installs Python + Nginx + certbot, creates a `table-tennis-scorer.service`
-systemd unit, writes an Nginx vhost for `tabletennis.azizzoaib.com`, requests a
+systemd unit, writes an Nginx vhost for `tt.azizzoaib.com`, requests a
 Let's Encrypt cert (auto-redirects HTTP → HTTPS), and provisions the DynamoDB
 tables. It coexists with `iquitscorer.service` — different port (`8002` vs
 `8000`), different Nginx `server_name`.
@@ -215,7 +215,7 @@ bash redeploy.sh
 If certbot fails during first run (DNS not propagated yet, security group
 closed), fix the cause then re-run:
 ```bash
-sudo certbot --nginx -d tabletennis.azizzoaib.com -m you@example.com --agree-tos --redirect
+sudo certbot --nginx -d tt.azizzoaib.com -m you@example.com --agree-tos --redirect
 ```
 
 ## Roles
@@ -229,5 +229,5 @@ Admins can promote a player to scorer (or vice versa) and reset passwords from t
 ## Notes
 
 - Icons for the PWA go in `app/static/icons/icon-192.png` and `icon-512.png`. If you don't add them, the manifest will still work; the icons just won't render.
-- Same architecture and deployment pattern as [iquitscorer](../iquitscorer). Runs alongside it on the same EC2: iquit on `52patta.azizzoaib.com` → `127.0.0.1:8000`, this app on `tabletennis.azizzoaib.com` → `127.0.0.1:8002`.
-- The live-share link in the match page is generated dynamically from the request URL, so it will render as `https://tabletennis.azizzoaib.com/live/<match_id>` once deployed.
+- Same architecture and deployment pattern as [iquitscorer](../iquitscorer). Runs alongside it on the same EC2: iquit on `52patta.azizzoaib.com` → `127.0.0.1:8000`, this app on `tt.azizzoaib.com` → `127.0.0.1:8002`.
+- The live-share link in the match page is generated dynamically from the request URL, so it will render as `https://tt.azizzoaib.com/live/<match_id>` once deployed.
