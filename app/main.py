@@ -26,6 +26,43 @@ templates = Jinja2Templates(directory="app/templates")
 app.mount("/static", StaticFiles(directory="app/static"), name="static")
 
 
+def _advancing_participants(tournament: dict, round_num: int) -> list:
+    """Participants eligible to be picked in round `round_num`.
+    Round 1 → all participants.
+    Round N ≥ 2 → only the winners of round N‑1's completed matches.
+        Singles winner: 1 participant (the winning slot).
+        Doubles winner: 2 participants (both members of the winning pair).
+    Falls back to all participants if the previous round has no decided winners
+    yet (so the dropdown is never empty and losers can still be manually chosen
+    for byes / corrections)."""
+    participants = tournament.get("participants", []) or []
+    if round_num <= 1:
+        return participants
+    rounds = tournament.get("rounds", []) or []
+    prev = next((r for r in rounds if int(r.get("round_num", 0)) == int(round_num) - 1), None)
+    if not prev:
+        return participants
+    advancing_ids = set()
+    for m in prev.get("matches", []) or []:
+        w = m.get("winner")  # "A" or "B" once the match is scored
+        if not w:
+            continue
+        if w == "A":
+            advancing_ids.add(m.get("a_id"))
+            if m.get("match_type") == "doubles" and m.get("a2_id"):
+                advancing_ids.add(m.get("a2_id"))
+        elif w == "B":
+            advancing_ids.add(m.get("b_id"))
+            if m.get("match_type") == "doubles" and m.get("b2_id"):
+                advancing_ids.add(m.get("b2_id"))
+    if not advancing_ids:
+        return participants  # nothing decided yet → don't lock the UI
+    return [p for p in participants if p.get("id") in advancing_ids]
+
+
+templates.env.globals["advancing_participants"] = _advancing_participants
+
+
 @app.get("/sw.js")
 async def service_worker():
     return FileResponse(
@@ -791,10 +828,25 @@ def create_tournament(request: Request,
                       best_of: int = Form(0),
                       points_to_win: int = Form(0),
                       service_interval: int = Form(0),
-                      deuce_interval: int = Form(0)):
+                      deuce_interval: int = Form(0),
+                      rounds_seed: str = Form("")):
     user = require_scorer(request)
     cfg = get_settings()
     tid = uuid.uuid4().hex
+
+    # Optional: seed rounds from a textarea. One round name per line
+    # (commas and semicolons also accepted).
+    seeded_rounds = []
+    if rounds_seed.strip():
+        raw = rounds_seed.replace(",", "\n").replace(";", "\n").splitlines()
+        names = [n.strip() for n in raw if n.strip()]
+        for idx, rname in enumerate(names, start=1):
+            seeded_rounds.append({
+                "round_num": idx,
+                "name": rname,
+                "matches": [],
+            })
+
     put_tournament({
         "tournament_id": tid,
         "name": name.strip(),
@@ -805,7 +857,7 @@ def create_tournament(request: Request,
         "user_id": user["user_id"],
         "created_at": now_ts(),
         "participants": [],
-        "rounds": [],
+        "rounds": seeded_rounds,
     })
     return RedirectResponse(f"/tournaments/{tid}", status_code=303)
 
@@ -945,10 +997,18 @@ def add_pair(request: Request, tournament_id: str, round_num: int,
     if match_type not in ("singles", "doubles"):
         match_type = "singles"
 
+    # Enforce advancement rule: from round 2 onwards, only winners of the
+    # previous round may be picked (falls back to full roster if the previous
+    # round has no decided winners yet, so byes/corrections still work).
+    allowed_pool = _advancing_participants(t, int(round_num))
+    allowed_ids = {p["id"] for p in allowed_pool}
+
     a = participants.get(participant_a)
     b = participants.get(participant_b)
     if not a or not b or a["id"] == b["id"]:
         raise HTTPException(400, "Select two different participants")
+    if a["id"] not in allowed_ids or b["id"] not in allowed_ids:
+        raise HTTPException(400, "Only winners of the previous round can be added to this round")
 
     a2 = b2 = None
     if match_type == "doubles":
@@ -956,6 +1016,8 @@ def add_pair(request: Request, tournament_id: str, round_num: int,
         b2 = participants.get(participant_b2)
         if not a2 or not b2:
             raise HTTPException(400, "Doubles requires 4 participants")
+        if a2["id"] not in allowed_ids or b2["id"] not in allowed_ids:
+            raise HTTPException(400, "Only winners of the previous round can be added to this round")
         chosen = {a["id"], a2["id"], b["id"], b2["id"]}
         if len(chosen) != 4:
             raise HTTPException(400, "All 4 doubles participants must be distinct")

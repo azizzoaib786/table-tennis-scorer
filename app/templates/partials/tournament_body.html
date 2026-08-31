@@ -101,14 +101,21 @@
 
   <!-- Rounds -->
   {% for r in (tournament.rounds or []) %}
+  {% set pool = advancing_participants(tournament, r.round_num) %}
   <div class="bg-white rounded-2xl border-2 border-emerald-200 shadow-lg p-4">
     <div class="flex items-center justify-between mb-3">
       <h2 class="text-lg font-bold text-emerald-900">{{ r.name }}</h2>
       <span class="text-xs px-2 py-1 rounded-full bg-emerald-100 text-emerald-700 font-bold">Round {{ r.round_num }}</span>
     </div>
 
+    {% if r.round_num > 1 and (pool|length) < (tournament.participants|length) %}
+    <div class="mb-3 rounded-lg border-2 border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+      🏆 Showing only <strong>{{ pool|length }}</strong> advancing player{{ 's' if (pool|length) != 1 else '' }} from Round {{ r.round_num - 1 }}.
+    </div>
+    {% endif %}
+
     <!-- Create pair (singles/doubles) -->
-    {% if tournament.participants and (tournament.participants|length) >= 2 %}
+    {% if pool and (pool|length) >= 2 %}
     <form
       hx-post="/tournaments/{{ tournament.tournament_id }}/rounds/{{ r.round_num }}/pairs"
       hx-target="#tournament-body"
@@ -118,10 +125,10 @@
       <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
         <select name="match_type" class="rounded-lg border-2 border-emerald-200 px-3 py-2 text-sm">
           <option value="singles">Singles</option>
-          <option value="doubles" {% if (tournament.participants|length) < 4 %}disabled{% endif %}>Doubles</option>
+          <option value="doubles" {% if (pool|length) < 4 %}disabled{% endif %}>Doubles</option>
         </select>
         <div class="text-xs text-emerald-800 self-center">
-          {% if (tournament.participants|length) < 4 %}Doubles needs ≥ 4 participants{% else %}Pick 4 distinct for doubles{% endif %}
+          {% if (pool|length) < 4 %}Doubles needs ≥ 4 eligible{% else %}Pick 4 distinct for doubles{% endif %}
         </div>
       </div>
       <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
@@ -129,22 +136,22 @@
           <div class="text-xs font-bold text-emerald-800 mb-1">Team A</div>
           <select name="participant_a" required class="w-full rounded-lg border-2 border-emerald-200 px-3 py-2 text-sm">
             <option value="">— Player A1 —</option>
-            {% for p in tournament.participants %}<option value="{{ p.id }}">{{ p.name }}</option>{% endfor %}
+            {% for p in pool %}<option value="{{ p.id }}">{{ p.name }}</option>{% endfor %}
           </select>
           <select name="participant_a2" class="pair-doubles-only hidden mt-1 w-full rounded-lg border-2 border-emerald-200 px-3 py-2 text-sm">
             <option value="">— Player A2 (partner) —</option>
-            {% for p in tournament.participants %}<option value="{{ p.id }}">{{ p.name }}</option>{% endfor %}
+            {% for p in pool %}<option value="{{ p.id }}">{{ p.name }}</option>{% endfor %}
           </select>
         </div>
         <div>
           <div class="text-xs font-bold text-emerald-800 mb-1">Team B</div>
           <select name="participant_b" required class="w-full rounded-lg border-2 border-emerald-200 px-3 py-2 text-sm">
             <option value="">— Player B1 —</option>
-            {% for p in tournament.participants %}<option value="{{ p.id }}">{{ p.name }}</option>{% endfor %}
+            {% for p in pool %}<option value="{{ p.id }}">{{ p.name }}</option>{% endfor %}
           </select>
           <select name="participant_b2" class="pair-doubles-only hidden mt-1 w-full rounded-lg border-2 border-emerald-200 px-3 py-2 text-sm">
             <option value="">— Player B2 (partner) —</option>
-            {% for p in tournament.participants %}<option value="{{ p.id }}">{{ p.name }}</option>{% endfor %}
+            {% for p in pool %}<option value="{{ p.id }}">{{ p.name }}</option>{% endfor %}
           </select>
         </div>
       </div>
@@ -217,24 +224,24 @@
           <div class="text-xs font-bold text-amber-800">✏️ Change who plays whom</div>
           <select name="match_type" class="w-full rounded-lg border-2 border-amber-200 px-3 py-2 text-sm">
             <option value="singles" {% if not is_doubles %}selected{% endif %}>Singles</option>
-            <option value="doubles" {% if is_doubles %}selected{% endif %} {% if (tournament.participants|length) < 4 %}disabled{% endif %}>Doubles</option>
+            <option value="doubles" {% if is_doubles %}selected{% endif %} {% if (pool|length) < 4 %}disabled{% endif %}>Doubles</option>
           </select>
           <div class="grid grid-cols-2 gap-2">
             <select name="participant_a" required class="rounded-lg border-2 border-amber-200 px-3 py-2 text-sm">
               <option value="">— A1 —</option>
-              {% for p in tournament.participants %}<option value="{{ p.id }}" {% if p.id == m.a_id %}selected{% endif %}>{{ p.name }}</option>{% endfor %}
+              {% for p in pool %}<option value="{{ p.id }}" {% if p.id == m.a_id %}selected{% endif %}>{{ p.name }}</option>{% endfor %}
             </select>
             <select name="participant_b" required class="rounded-lg border-2 border-amber-200 px-3 py-2 text-sm">
               <option value="">— B1 —</option>
-              {% for p in tournament.participants %}<option value="{{ p.id }}" {% if p.id == m.b_id %}selected{% endif %}>{{ p.name }}</option>{% endfor %}
+              {% for p in pool %}<option value="{{ p.id }}" {% if p.id == m.b_id %}selected{% endif %}>{{ p.name }}</option>{% endfor %}
             </select>
             <select name="participant_a2" class="pair-doubles-only {% if not is_doubles %}hidden{% endif %} rounded-lg border-2 border-amber-200 px-3 py-2 text-sm">
               <option value="">— A2 —</option>
-              {% for p in tournament.participants %}<option value="{{ p.id }}" {% if p.id == m.a2_id %}selected{% endif %}>{{ p.name }}</option>{% endfor %}
+              {% for p in pool %}<option value="{{ p.id }}" {% if p.id == m.a2_id %}selected{% endif %}>{{ p.name }}</option>{% endfor %}
             </select>
             <select name="participant_b2" class="pair-doubles-only {% if not is_doubles %}hidden{% endif %} rounded-lg border-2 border-amber-200 px-3 py-2 text-sm">
               <option value="">— B2 —</option>
-              {% for p in tournament.participants %}<option value="{{ p.id }}" {% if p.id == m.b2_id %}selected{% endif %}>{{ p.name }}</option>{% endfor %}
+              {% for p in pool %}<option value="{{ p.id }}" {% if p.id == m.b2_id %}selected{% endif %}>{{ p.name }}</option>{% endfor %}
             </select>
           </div>
           <button class="w-full rounded-lg bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold px-3 py-2">💾 Save pairing</button>

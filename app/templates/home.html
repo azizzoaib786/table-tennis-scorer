@@ -149,6 +149,15 @@
               <input name="points_to_win" type="number" min="5" value="{{ settings.default_points_to_win if settings else 11 }}" class="mt-1 w-full rounded-xl border-2 border-sky-200 focus:border-sky-400 px-3 py-3"/>
             </div>
           </div>
+          <details>
+            <summary class="cursor-pointer text-sm font-semibold text-sky-900">🗂️ Rounds (optional)</summary>
+            <div class="mt-2 space-y-1">
+              <textarea name="rounds_seed" rows="4"
+                        placeholder="One round name per line (or comma-separated):&#10;League&#10;Quarter Finals&#10;Semi Finals&#10;Finals"
+                        class="w-full rounded-xl border-2 border-sky-200 focus:border-sky-400 px-3 py-2 text-sm font-mono"></textarea>
+              <p class="text-xs text-sky-700">Leave blank to add rounds one-by-one later. In rounds 2+, only <strong>winners of the previous round</strong> appear in the participant dropdowns.</p>
+            </div>
+          </details>
           <button class="w-full rounded-xl bg-gradient-to-r from-sky-500 to-indigo-600 hover:from-sky-600 hover:to-indigo-700 text-white py-4 text-lg font-bold shadow-lg">🏆 Create Tournament</button>
         </form>
       </div>
