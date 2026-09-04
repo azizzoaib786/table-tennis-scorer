@@ -120,7 +120,8 @@
       hx-post="/tournaments/{{ tournament.tournament_id }}/rounds/{{ r.round_num }}/pairs"
       hx-target="#tournament-body"
       hx-swap="innerHTML"
-      onchange="const dbl = this.querySelector('[name=match_type]').value === 'doubles'; this.querySelectorAll('.pair-doubles-only').forEach(el => el.classList.toggle('hidden', !dbl));"
+      data-pair-form
+      onchange="ttPairFormChange(this, event);"
       class="mb-3 p-3 bg-emerald-50 rounded-xl border border-emerald-100 space-y-2">
       <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
         <select name="match_type" class="rounded-lg border-2 border-emerald-200 px-3 py-2 text-sm">
@@ -128,7 +129,7 @@
           <option value="doubles" {% if (pool|length) < 4 %}disabled{% endif %}>Doubles</option>
         </select>
         <div class="text-xs text-emerald-800 self-center">
-          {% if (pool|length) < 4 %}Doubles needs ≥ 4 eligible{% else %}Pick 4 distinct for doubles{% endif %}
+          {% if (pool|length) < 4 %}Doubles needs ≥ 4 eligible{% else %}Pick 4 distinct for doubles — registered pairs auto-fill{% endif %}
         </div>
       </div>
       <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
@@ -136,27 +137,53 @@
           <div class="text-xs font-bold text-emerald-800 mb-1">Team A</div>
           <select name="participant_a" required class="w-full rounded-lg border-2 border-emerald-200 px-3 py-2 text-sm">
             <option value="">— Player A1 —</option>
-            {% for p in pool %}<option value="{{ p.id }}">{{ p.name }}</option>{% endfor %}
+            {% for p in pool %}<option value="{{ p.id }}" data-pair="{{ p.pair_id or '' }}" data-team="{{ p.team_name or '' }}">{{ p.name }}{% if p.team_name %} · {{ p.team_name }}{% endif %}</option>{% endfor %}
           </select>
           <select name="participant_a2" class="pair-doubles-only hidden mt-1 w-full rounded-lg border-2 border-emerald-200 px-3 py-2 text-sm">
             <option value="">— Player A2 (partner) —</option>
-            {% for p in pool %}<option value="{{ p.id }}">{{ p.name }}</option>{% endfor %}
+            {% for p in pool %}<option value="{{ p.id }}" data-pair="{{ p.pair_id or '' }}" data-team="{{ p.team_name or '' }}">{{ p.name }}{% if p.team_name %} · {{ p.team_name }}{% endif %}</option>{% endfor %}
           </select>
         </div>
         <div>
           <div class="text-xs font-bold text-emerald-800 mb-1">Team B</div>
           <select name="participant_b" required class="w-full rounded-lg border-2 border-emerald-200 px-3 py-2 text-sm">
             <option value="">— Player B1 —</option>
-            {% for p in pool %}<option value="{{ p.id }}">{{ p.name }}</option>{% endfor %}
+            {% for p in pool %}<option value="{{ p.id }}" data-pair="{{ p.pair_id or '' }}" data-team="{{ p.team_name or '' }}">{{ p.name }}{% if p.team_name %} · {{ p.team_name }}{% endif %}</option>{% endfor %}
           </select>
           <select name="participant_b2" class="pair-doubles-only hidden mt-1 w-full rounded-lg border-2 border-emerald-200 px-3 py-2 text-sm">
             <option value="">— Player B2 (partner) —</option>
-            {% for p in pool %}<option value="{{ p.id }}">{{ p.name }}</option>{% endfor %}
+            {% for p in pool %}<option value="{{ p.id }}" data-pair="{{ p.pair_id or '' }}" data-team="{{ p.team_name or '' }}">{{ p.name }}{% if p.team_name %} · {{ p.team_name }}{% endif %}</option>{% endfor %}
           </select>
         </div>
       </div>
       <button class="w-full rounded-lg bg-gradient-to-r from-emerald-600 to-teal-600 text-white font-bold px-3 py-2 text-sm">+ Add pair</button>
     </form>
+    <script>
+      // Idempotent global helper — reattached fine on htmx swaps.
+      window.ttPairFormChange = function(form, event) {
+        const isDoubles = form.querySelector('[name=match_type]').value === 'doubles';
+        form.querySelectorAll('.pair-doubles-only').forEach(el => el.classList.toggle('hidden', !isDoubles));
+        if (!isDoubles) return;
+        const changed = event && event.target;
+        if (!changed || !changed.name) return;
+        // Auto-fill the partner slot when the primary of a registered pair is picked.
+        const autoPair = (primaryName, partnerName) => {
+          const primary = form.querySelector(`[name=${primaryName}]`);
+          const partnerSel = form.querySelector(`[name=${partnerName}]`);
+          if (!primary || !partnerSel) return;
+          const opt = primary.selectedOptions[0];
+          const pid = opt ? (opt.dataset.pair || '') : '';
+          if (!pid) return;
+          // Find matching partner option (same pair, different player id).
+          const match = Array.from(partnerSel.options).find(o =>
+            o.value && o.value !== primary.value && (o.dataset.pair || '') === pid
+          );
+          if (match && !partnerSel.value) partnerSel.value = match.value;
+        };
+        if (changed.name === 'participant_a')  autoPair('participant_a',  'participant_a2');
+        if (changed.name === 'participant_b')  autoPair('participant_b',  'participant_b2');
+      };
+    </script>
 
     <details class="mb-3">
       <summary class="cursor-pointer text-xs font-bold text-emerald-800">⬆️ Bulk paste pairings</summary>
