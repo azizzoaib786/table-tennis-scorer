@@ -106,6 +106,9 @@ server {
     listen 80;
     server_name ${DOMAIN};
 
+    # Allow player-photo uploads on the registration form.
+    client_max_body_size 25M;
+
     location /.well-known/acme-challenge/ { root /var/www/certbot; }
 
     location / {
