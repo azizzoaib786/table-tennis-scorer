@@ -1691,18 +1691,29 @@ async def build_participants_from_registrations(request: Request, tournament_id:
 
     def _add_doubles_participant(primary: Dict[str, Any], partner: Dict[str, Any],
                                  team_name: str, pair_id: str = "") -> None:
-        nm = (primary.get("name") or "").strip()
-        if not nm or nm.lower() in existing_names:
+        """Add BOTH members of a doubles pair as individual participants, linked by pair_id.
+        This keeps the participant pool = players (not teams), so the round form can
+        pick 4 distinct people for a doubles match, while match_context() still
+        resolves the team badge via the shared team_name on each registration."""
+        pnm = (primary.get("name") or "").strip()
+        qnm = (partner.get("name") or "").strip()
+        if not pnm or not qnm:
             return
-        participants.append({
-            "id": uuid.uuid4().hex[:8],
-            "name": nm,
-            "user_id": "",
-            "pair_id": pair_id or uuid.uuid4().hex,
-            "partner_name": (partner.get("name") or "").strip(),
-            "team_name": (team_name or "").strip() or f"{primary.get('name','')} & {partner.get('name','')}",
-        })
-        existing_names.add(nm.lower())
+        shared_pair = pair_id or uuid.uuid4().hex
+        team_label = (team_name or "").strip() or f"{pnm} & {qnm}"
+        for me, other in ((primary, partner), (partner, primary)):
+            nm = (me.get("name") or "").strip()
+            if not nm or nm.lower() in existing_names:
+                continue
+            participants.append({
+                "id": uuid.uuid4().hex[:8],
+                "name": nm,
+                "user_id": "",
+                "pair_id": shared_pair,
+                "partner_name": (other.get("name") or "").strip(),
+                "team_name": team_label,
+            })
+            existing_names.add(nm.lower())
 
     if fmt == "singles":
         # Every registration → 1 participant. Pairs are split into individuals.
