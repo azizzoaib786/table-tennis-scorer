@@ -1637,7 +1637,8 @@ def build_participants_form(request: Request, tournament_id: str):
     """Admin builder page: pick format, pair up lone singles, then confirm."""
     user, t = check_tournament_access(request, tournament_id)
     if (t.get("status") or "registration") != "registration":
-        raise HTTPException(400, "This tournament has already been built")
+        # Tournament already built — send admin back to the tournament page.
+        return RedirectResponse(f"/tournaments/{tournament_id}", status_code=303)
     all_regs = list_registrations_by_tournament(tournament_id)
     paid_regs = [r for r in all_regs if r.get("payment_done")]
     unpaid_count = len(all_regs) - len(paid_regs)
@@ -1742,7 +1743,9 @@ async def build_participants_from_registrations(request: Request, tournament_id:
         {":p": participants, ":s": "active", ":f": fmt},
         expr_names={"#st": "status", "#f": "format"},
     )
-    return HTMLResponse("", status_code=200, headers={"HX-Redirect": f"/tournaments/{tournament_id}"})
+    # Plain form submit → use a proper 303 redirect (also works for htmx, which
+    # follows the redirect transparently).
+    return RedirectResponse(f"/tournaments/{tournament_id}", status_code=303)
 
 
 @app.post("/tournaments/{tournament_id}/rounds", response_class=HTMLResponse)
