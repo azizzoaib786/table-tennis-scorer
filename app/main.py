@@ -2246,6 +2246,10 @@ def start_pair_match(request: Request, tournament_id: str, round_num: int, slot:
         "service_interval": int(t.get("service_interval", cfg["service_interval"])),
         "deuce_interval": int(t.get("deuce_interval", cfg["deuce_interval"])),
         "deciding_side_change_at": int(cfg.get("deciding_side_change_at", 5)),
+        # Snapshot hard-cap rule onto the tournament match too — mirrors
+        # /matches so global settings changes don't retro-alter live matches.
+        "hard_cap_enabled": bool(cfg.get("hard_cap_enabled", False)),
+        "hard_cap_at": int(cfg.get("hard_cap_at", 15)),
         "first_server": "A",
         "created_at": now_ts(),
         "user_id": user["user_id"],
