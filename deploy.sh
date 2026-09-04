@@ -29,6 +29,10 @@ USERS_TABLE="tt_users"
 TOURNAMENTS_TABLE="tt_tournaments"
 SETTINGS_TABLE="tt_settings"
 ROSTER_TABLE="tt_roster"
+REGISTRATIONS_TABLE="tt_registrations"
+
+# Photo uploads (S3). Bucket + IAM created by zizabot/terraform/s3.
+TT_S3_BUCKET="tt-players-photos-eu-west-1"
 
 # SECRET_KEY + optional TT_ADMIN_PASSWORD persist across deploys.
 SECRET_FILE="/etc/table-tennis-scorer.env"
@@ -83,6 +87,8 @@ Environment="USERS_TABLE=${USERS_TABLE}"
 Environment="TOURNAMENTS_TABLE=${TOURNAMENTS_TABLE}"
 Environment="SETTINGS_TABLE=${SETTINGS_TABLE}"
 Environment="ROSTER_TABLE=${ROSTER_TABLE}"
+Environment="REGISTRATIONS_TABLE=${REGISTRATIONS_TABLE}"
+Environment="TT_S3_BUCKET=${TT_S3_BUCKET}"
 ExecStart=${APP_DIR}/.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port ${APP_PORT}
 Restart=always
 RestartSec=5

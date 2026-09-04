@@ -11,6 +11,28 @@
   </div>
   {% endif %}
 
+  {% if is_root_admin %}
+  <details class="mb-3 rounded-xl border-2 border-rose-300 bg-rose-50 p-3">
+    <summary class="cursor-pointer font-bold text-rose-900 text-sm">👑 Create a new admin (root only)</summary>
+    <form hx-post="/admin/users/create-admin" hx-target="#user-management" hx-swap="outerHTML"
+          class="mt-3 grid grid-cols-1 sm:grid-cols-3 gap-2 items-end">
+      <label class="text-xs font-bold text-rose-800">Username
+        <input name="username" required class="mt-1 w-full px-2 py-1 rounded-lg border-2 border-rose-300"/>
+      </label>
+      <label class="text-xs font-bold text-rose-800">Email (optional)
+        <input name="email" type="email" class="mt-1 w-full px-2 py-1 rounded-lg border-2 border-rose-300"/>
+      </label>
+      <label class="text-xs font-bold text-rose-800">Password
+        <input name="password" type="text" placeholder="Leave blank to auto-generate" class="mt-1 w-full px-2 py-1 rounded-lg border-2 border-rose-300"/>
+      </label>
+      <div class="sm:col-span-3 flex justify-end">
+        <button class="px-3 py-2 rounded-lg bg-gradient-to-r from-rose-600 to-red-600 text-white text-sm font-bold shadow-md">👑 Create admin</button>
+      </div>
+    </form>
+    <p class="mt-2 text-xs text-rose-800">Only the seeded <strong>admin</strong> account (root) sees this form. New admins are created with role <strong>scorer</strong> plus admin rights; if you leave the password blank an auto-generated temp password is shown once — they must change it on first login.</p>
+  </details>
+  {% endif %}
+
   {% if all_users %}
   <div class="space-y-2">
     {% for usr in all_users %}
@@ -18,7 +40,8 @@
       <div class="flex-1 min-w-0">
         <div class="font-bold text-slate-800 truncate">
           {{ usr.username }}
-          {% if usr.is_admin %}<span class="ml-1 text-xs px-2 py-0.5 rounded-full bg-rose-200 text-rose-700 font-bold">ADMIN</span>
+          {% if usr.get('is_root_admin') or usr.username == 'admin' %}<span class="ml-1 text-xs px-2 py-0.5 rounded-full bg-yellow-300 text-yellow-900 font-bold">👑 ROOT</span>
+          {% elif usr.is_admin %}<span class="ml-1 text-xs px-2 py-0.5 rounded-full bg-rose-200 text-rose-700 font-bold">ADMIN</span>
           {% elif usr.get('role', 'scorer') == 'player' %}<span class="ml-1 text-xs px-2 py-0.5 rounded-full bg-pink-200 text-pink-700 font-bold">👤 PLAYER</span>
           {% else %}<span class="ml-1 text-xs px-2 py-0.5 rounded-full bg-emerald-200 text-emerald-700 font-bold">🎮 SCORER</span>{% endif %}
           {% if not usr.get('is_active', True) %}<span class="ml-1 text-xs px-2 py-0.5 rounded-full bg-gray-200 text-gray-700 font-bold">INACTIVE</span>{% endif %}
@@ -26,6 +49,11 @@
         <div class="text-xs text-slate-500 truncate">{% if usr.email %}{{ usr.email }} • {% endif %}{{ usr.user_id[:12] }}...</div>
       </div>
       <div class="flex gap-1 flex-wrap justify-end">
+        {% if usr.is_admin and is_root_admin and not (usr.get('is_root_admin') or usr.username == 'admin') %}
+        <form hx-post="/admin/users/{{ usr.user_id }}/revoke-admin" hx-target="#user-management" hx-swap="outerHTML" hx-confirm="Revoke admin rights from {{ usr.username }}? They become a scorer.">
+          <button class="px-2 py-1 rounded-lg bg-gradient-to-r from-orange-500 to-red-500 text-white text-xs font-bold shadow-md">👑✖ Revoke admin</button>
+        </form>
+        {% endif %}
         {% if not usr.is_admin %}
         {% if usr.get('role', 'scorer') == 'player' %}
         <form hx-post="/admin/users/{{ usr.user_id }}/make-scorer" hx-target="#user-management" hx-swap="outerHTML" hx-confirm="Promote {{ usr.username }} to Scorer?">

@@ -1,0 +1,188 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1"/>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <title>Register — {{ tournament.name }}</title>
+    <link rel="manifest" href="/static/manifest.json" />
+    <meta name="theme-color" content="#059669" />
+  </head>
+  <body class="bg-gradient-to-br from-emerald-100 via-teal-100 to-sky-100 min-h-screen">
+    <div class="max-w-2xl mx-auto p-3 sm:p-4">
+      <div class="bg-white rounded-3xl shadow-2xl border-2 border-emerald-200 p-5">
+        <div class="text-center mb-4">
+          <div class="text-4xl">🏓</div>
+          <h1 class="text-2xl font-bold text-emerald-900">Register to Play</h1>
+          <p class="text-emerald-700 text-sm font-medium">{{ tournament.name }}</p>
+        </div>
+
+        {% if is_admin_view %}
+        <div class="mb-4 rounded-2xl border-2 border-amber-300 bg-amber-50 px-4 py-3 text-amber-900 text-sm">
+          <span class="font-bold">🛠️ Admin mode</span> — you're registering a player manually. The window/close checks are bypassed for you.
+        </div>
+        {% endif %}
+
+        {% if flash %}
+        <div class="mb-4 rounded-2xl border-2 border-emerald-300 bg-emerald-50 px-4 py-3 text-emerald-900 font-semibold text-sm">
+          {{ flash }}
+        </div>
+        {% endif %}
+
+        {% if window is defined and not window.is_open %}
+        <div class="mb-4 rounded-2xl border-2 border-rose-300 bg-rose-50 px-4 py-6 text-center">
+          <div class="text-4xl mb-1">🔒</div>
+          <p class="text-rose-900 font-bold text-lg">Registration is closed</p>
+          <p class="text-rose-700 text-sm mt-1">{{ window.reason }}</p>
+        </div>
+        {% elif just_registered %}
+        <div class="text-center">
+          <a href="/tournaments/{{ tournament.tournament_id }}/register"
+             class="inline-block mt-2 px-4 py-3 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 text-white font-bold shadow-lg">
+            Register another player
+          </a>
+        </div>
+        {% else %}
+        <div class="mb-3 rounded-xl border-2 border-sky-200 bg-sky-50 px-3 py-2 text-sky-900 text-xs">
+          🏆 <strong>{{ tournament.name }}</strong>. Pick <strong>Doubles</strong> if you're registering with a partner, or <strong>Singles</strong> if you're on your own. The organizers will confirm the final format later; if you registered as singles for a doubles tournament, you'll be paired from the singles pool.
+        </div>
+        <form method="post" action="/tournaments/{{ tournament.tournament_id }}/register" enctype="multipart/form-data" class="space-y-3">
+          <div>
+            <label class="text-sm font-bold text-emerald-900">How are you registering? *</label>
+            <select id="match_type" name="match_type" onchange="togglePartner()"
+                    class="mt-1 w-full rounded-xl border-2 border-emerald-200 focus:border-emerald-400 px-4 py-3">
+              <option value="doubles" {% if (tournament.format or 'doubles') == 'doubles' %}selected{% endif %}>👥 Doubles (with a partner)</option>
+              <option value="singles" {% if (tournament.format or 'doubles') == 'singles' %}selected{% endif %}>🏓 Singles (just me)</option>
+            </select>
+          </div>
+
+          <div class="rounded-2xl border-2 border-emerald-100 bg-emerald-50/50 p-3 space-y-3">
+            <p class="text-xs font-bold uppercase text-emerald-700">Your details (all required)</p>
+            <div>
+              <label class="text-sm font-bold text-emerald-900">Full name *</label>
+              <input name="name" required placeholder="Aziz Zoaib"
+                     class="mt-1 w-full rounded-xl border-2 border-emerald-200 focus:border-emerald-400 px-4 py-3"/>
+            </div>
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label class="text-sm font-bold text-emerald-900">Email *</label>
+                <input name="email" type="email" required placeholder="you@example.com"
+                       class="mt-1 w-full rounded-xl border-2 border-emerald-200 focus:border-emerald-400 px-4 py-3"/>
+              </div>
+              <div>
+                <label class="text-sm font-bold text-emerald-900">Phone *</label>
+                <input name="phone" type="tel" required placeholder="+971 5x xxx xxxx"
+                       class="mt-1 w-full rounded-xl border-2 border-emerald-200 focus:border-emerald-400 px-4 py-3"/>
+              </div>
+            </div>
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label class="text-sm font-bold text-emerald-900">ITS number *</label>
+                <input name="its" required placeholder="ITS ID"
+                       class="mt-1 w-full rounded-xl border-2 border-emerald-200 focus:border-emerald-400 px-4 py-3"/>
+              </div>
+              <div>
+                <label class="text-sm font-bold text-emerald-900">Age *</label>
+                <input name="age" type="number" required min="1" max="120" placeholder="25"
+                       class="mt-1 w-full rounded-xl border-2 border-emerald-200 focus:border-emerald-400 px-4 py-3"/>
+              </div>
+            </div>
+            <div>
+              <label class="text-sm font-bold text-emerald-900">Experience level *</label>
+              <select name="experience" required class="mt-1 w-full rounded-xl border-2 border-emerald-200 focus:border-emerald-400 px-4 py-3">
+                <option value="beginner">🟢 Beginner</option>
+                <option value="amateur">🟡 Amateur</option>
+                <option value="expert">🔴 Expert</option>
+              </select>
+            </div>
+            <div>
+              <label class="text-sm font-bold text-emerald-900">Photo *</label>
+              <input name="photo" type="file" required accept="image/jpeg,image/png,image/webp,image/gif"
+                     class="mt-1 w-full rounded-xl border-2 border-emerald-200 focus:border-emerald-400 px-4 py-3 text-sm"/>
+              <p class="text-xs text-emerald-700 mt-1">JPG / PNG / WEBP / GIF, max 5 MB. Shown next to your name on the scoreboard.</p>
+            </div>
+          </div>
+
+          <div id="partner_block" class="hidden rounded-2xl border-2 border-teal-200 bg-teal-50/60 p-3 space-y-3">
+            <p class="text-xs font-bold uppercase text-teal-700">Team + partner details (all required)</p>
+            <div>
+              <label class="text-sm font-bold text-teal-900">Team name *</label>
+              <input id="team_name" name="team_name" placeholder="e.g. Smash Kings"
+                     class="mt-1 w-full rounded-xl border-2 border-teal-200 focus:border-teal-400 px-4 py-3"/>
+              <p class="text-xs text-teal-700 mt-1">Shown on the scoreboard when your pair plays.</p>
+            </div>
+            <div>
+              <label class="text-sm font-bold text-teal-900">Partner's full name *</label>
+              <input id="partner_name" name="partner_name" placeholder="Partner name"
+                     class="mt-1 w-full rounded-xl border-2 border-teal-200 focus:border-teal-400 px-4 py-3"/>
+            </div>
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label class="text-sm font-bold text-teal-900">Partner's email *</label>
+                <input id="partner_email" name="partner_email" type="email" placeholder="partner@example.com"
+                       class="mt-1 w-full rounded-xl border-2 border-teal-200 focus:border-teal-400 px-4 py-3"/>
+              </div>
+              <div>
+                <label class="text-sm font-bold text-teal-900">Partner's phone *</label>
+                <input id="partner_phone" name="partner_phone" type="tel" placeholder="+971 5x xxx xxxx"
+                       class="mt-1 w-full rounded-xl border-2 border-teal-200 focus:border-teal-400 px-4 py-3"/>
+              </div>
+            </div>
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label class="text-sm font-bold text-teal-900">Partner's ITS number *</label>
+                <input id="partner_its" name="partner_its" placeholder="ITS ID"
+                       class="mt-1 w-full rounded-xl border-2 border-teal-200 focus:border-teal-400 px-4 py-3"/>
+              </div>
+              <div>
+                <label class="text-sm font-bold text-teal-900">Partner's age *</label>
+                <input id="partner_age" name="partner_age" type="number" min="1" max="120" placeholder="25"
+                       class="mt-1 w-full rounded-xl border-2 border-teal-200 focus:border-teal-400 px-4 py-3"/>
+              </div>
+            </div>
+            <div>
+              <label class="text-sm font-bold text-teal-900">Partner's experience *</label>
+              <select id="partner_experience" name="partner_experience" class="mt-1 w-full rounded-xl border-2 border-teal-200 focus:border-teal-400 px-4 py-3">
+                <option value="beginner">🟢 Beginner</option>
+                <option value="amateur">🟡 Amateur</option>
+                <option value="expert">🔴 Expert</option>
+              </select>
+            </div>
+            <div>
+              <label class="text-sm font-bold text-teal-900">Partner's photo *</label>
+              <input id="partner_photo" name="partner_photo" type="file" accept="image/jpeg,image/png,image/webp,image/gif"
+                     class="mt-1 w-full rounded-xl border-2 border-teal-200 focus:border-teal-400 px-4 py-3 text-sm"/>
+              <p class="text-xs text-teal-700 mt-1">JPG / PNG / WEBP / GIF, max 5 MB.</p>
+            </div>
+          </div>
+
+          <button class="w-full rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white py-4 text-lg font-bold shadow-lg">
+            ✅ Register
+          </button>
+        </form>
+        <script>
+          function togglePartner() {
+            const sel = document.getElementById('match_type');
+            const block = document.getElementById('partner_block');
+            const isDoubles = sel && sel.value === 'doubles';
+            block.classList.toggle('hidden', !isDoubles);
+            ['team_name','partner_name','partner_email','partner_phone','partner_its',
+             'partner_age','partner_experience','partner_photo'].forEach(id => {
+              const el = document.getElementById(id);
+              if (el) el.required = isDoubles;
+            });
+          }
+
+          togglePartner();
+        </script>
+
+        {% endif %}
+      </div>
+
+      <div class="mt-4 text-center pb-4">
+        <p class="text-sm text-emerald-700 font-medium">🏓 <span class="font-bold bg-gradient-to-r from-emerald-600 to-teal-600 bg-clip-text text-transparent">Table Tennis Scorer</span></p>
+        <p class="text-xs text-emerald-600 mt-1">Created with ❤️ by <a href="https://azizzoaib.com" target="_blank" rel="noopener" class="font-semibold hover:underline">Aziz Zoaib</a></p>
+      </div>
+    </div>
+  </body>
+</html>

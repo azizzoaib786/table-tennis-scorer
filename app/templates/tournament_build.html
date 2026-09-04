@@ -1,0 +1,141 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1"/>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <title>Build tournament — {{ tournament.name }}</title>
+  </head>
+  <body class="bg-gradient-to-br from-indigo-100 via-sky-100 to-purple-100 min-h-screen">
+    <div class="max-w-3xl mx-auto p-3 sm:p-4">
+      <div class="bg-white rounded-3xl shadow-2xl border-2 border-indigo-200 p-5">
+        <div class="mb-4 flex items-center justify-between gap-3 flex-wrap">
+          <div>
+            <h1 class="text-2xl font-bold text-indigo-900">🏆 Build tournament</h1>
+            <p class="text-indigo-700 text-sm font-medium">{{ tournament.name }}</p>
+          </div>
+          <a href="/tournaments/{{ tournament.tournament_id }}/registrations"
+             class="px-3 py-2 rounded-xl bg-slate-200 hover:bg-slate-300 text-slate-800 text-sm font-bold">← Back to registrations</a>
+        </div>
+
+        <div class="mb-4 grid grid-cols-2 sm:grid-cols-4 gap-2 text-center text-xs">
+          <div class="rounded-xl bg-emerald-50 border-2 border-emerald-200 p-2">
+            <div class="text-emerald-700 font-bold uppercase">Paid pairs</div>
+            <div class="text-xl font-black text-emerald-800">{{ paid_pairs|length }}</div>
+          </div>
+          <div class="rounded-xl bg-sky-50 border-2 border-sky-200 p-2">
+            <div class="text-sky-700 font-bold uppercase">Paid lone singles</div>
+            <div class="text-xl font-black text-sky-800">{{ paid_lone_singles|length }}</div>
+          </div>
+          <div class="rounded-xl bg-amber-50 border-2 border-amber-200 p-2">
+            <div class="text-amber-700 font-bold uppercase">Unpaid</div>
+            <div class="text-xl font-black text-amber-800">{{ unpaid_count }}</div>
+          </div>
+          <div class="rounded-xl bg-slate-50 border-2 border-slate-200 p-2">
+            <div class="text-slate-600 font-bold uppercase">Total regs</div>
+            <div class="text-xl font-black text-slate-800">{{ total_regs }}</div>
+          </div>
+        </div>
+
+        <form method="post" action="/tournaments/{{ tournament.tournament_id }}/build-participants" class="space-y-4">
+          <fieldset class="rounded-2xl border-2 border-indigo-200 bg-indigo-50/60 p-4">
+            <legend class="px-2 font-bold text-indigo-900">1. Choose the play format</legend>
+            <label class="flex items-start gap-3 p-3 rounded-xl bg-white hover:bg-indigo-50 border-2 border-transparent has-[:checked]:border-indigo-400 cursor-pointer">
+              <input type="radio" name="format" value="doubles" onchange="updateView()"
+                     {% if (tournament.format or 'doubles') == 'doubles' %}checked{% endif %} class="mt-1"/>
+              <div class="flex-1">
+                <div class="font-bold text-indigo-900">👥 Doubles</div>
+                <div class="text-xs text-slate-600">Registered pairs auto-import. Lone singles can be paired below into doubles teams. Unpaired lone singles are excluded.</div>
+              </div>
+            </label>
+            <label class="flex items-start gap-3 p-3 mt-2 rounded-xl bg-white hover:bg-indigo-50 border-2 border-transparent has-[:checked]:border-indigo-400 cursor-pointer">
+              <input type="radio" name="format" value="singles" onchange="updateView()"
+                     {% if (tournament.format or 'doubles') == 'singles' %}checked{% endif %} class="mt-1"/>
+              <div class="flex-1">
+                <div class="font-bold text-indigo-900">🏓 Singles</div>
+                <div class="text-xs text-slate-600">Everyone plays as an individual. Registered pairs are split — both members become independent singles participants.</div>
+              </div>
+            </label>
+          </fieldset>
+
+          <fieldset class="rounded-2xl border-2 border-slate-200 bg-white p-4">
+            <legend class="px-2 font-bold text-slate-800">2. Filter</legend>
+            <label class="flex items-center gap-2 text-sm">
+              <input type="checkbox" name="include_unpaid" value="on"/>
+              Include unpaid registrations ({{ unpaid_count }})
+            </label>
+          </fieldset>
+
+          <div id="view_doubles" class="space-y-3">
+            <div class="rounded-2xl border-2 border-emerald-200 bg-emerald-50 p-4">
+              <p class="font-bold text-emerald-900 mb-2">✅ Registered pairs — auto-imported ({{ paid_pairs|length }})</p>
+              {% if paid_pairs %}
+              <ul class="space-y-1 text-sm">
+                {% for p in paid_pairs %}
+                <li class="bg-white rounded-lg px-3 py-2 border border-emerald-200">
+                  <strong>{{ p.team_name or (p.primary.name ~ ' & ' ~ p.partner.name) }}</strong>
+                  <span class="text-slate-600 text-xs">— {{ p.primary.name }} &amp; {{ p.partner.name }}</span>
+                </li>
+                {% endfor %}
+              </ul>
+              {% else %}
+              <p class="text-emerald-700 text-sm">No registered pairs yet.</p>
+              {% endif %}
+            </div>
+
+            <div class="rounded-2xl border-2 border-sky-200 bg-sky-50 p-4">
+              <p class="font-bold text-sky-900 mb-2">🔗 Pair up lone singles ({{ paid_lone_singles|length }})</p>
+              {% if paid_lone_singles %}
+              <p class="text-xs text-sky-800 mb-2">For each lone single, pick a partner from the pool and give the team a name. Leave "— skip —" to exclude that person from a doubles tournament.</p>
+              <div class="space-y-2">
+                {% for s in paid_lone_singles %}
+                <div class="bg-white rounded-lg p-3 border border-sky-200 grid grid-cols-1 sm:grid-cols-3 gap-2 items-center">
+                  <div class="font-semibold text-slate-800">{{ s.name }}</div>
+                  <select name="lone_pair_{{ s.registration_id }}" class="rounded-lg border-2 border-sky-200 px-2 py-1 text-sm">
+                    <option value="">— skip —</option>
+                    {% for other in paid_lone_singles if other.registration_id != s.registration_id %}
+                    <option value="{{ other.registration_id }}">Pair with {{ other.name }}</option>
+                    {% endfor %}
+                  </select>
+                  <input name="lone_team_{{ s.registration_id }}" placeholder="Team name (optional)"
+                         class="rounded-lg border-2 border-sky-200 px-2 py-1 text-sm"/>
+                </div>
+                {% endfor %}
+              </div>
+              <p class="text-xs text-sky-700 mt-2">Tip: only one side of each pair needs to pick — if A pairs with B, we ignore B's choice.</p>
+              {% else %}
+              <p class="text-sky-700 text-sm">No lone singles to pair.</p>
+              {% endif %}
+            </div>
+          </div>
+
+          <div id="view_singles" class="rounded-2xl border-2 border-slate-200 bg-slate-50 p-4 hidden">
+            <p class="font-bold text-slate-800 mb-2">🏓 Singles tournament</p>
+            <p class="text-sm text-slate-700">
+              Every paid registrant becomes one participant.
+              Registered pairs will be split: <strong>{{ paid_pairs|length * 2 }}</strong> players from pairs + <strong>{{ paid_lone_singles|length }}</strong> lone singles
+              = <strong>{{ paid_pairs|length * 2 + paid_lone_singles|length }}</strong> total.
+            </p>
+          </div>
+
+          <div class="pt-2 flex flex-wrap gap-2 justify-end">
+            <a href="/tournaments/{{ tournament.tournament_id }}/registrations"
+               class="px-4 py-3 rounded-xl bg-slate-200 hover:bg-slate-300 text-slate-800 font-bold">Cancel</a>
+            <button class="px-5 py-3 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 text-white font-bold shadow-lg">
+              🏆 Build & start tournament
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <script>
+      function updateView() {
+        const fmt = document.querySelector('input[name="format"]:checked').value;
+        document.getElementById('view_doubles').classList.toggle('hidden', fmt !== 'doubles');
+        document.getElementById('view_singles').classList.toggle('hidden', fmt !== 'singles');
+      }
+      updateView();
+    </script>
+  </body>
+</html>

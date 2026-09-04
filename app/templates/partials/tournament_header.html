@@ -1,0 +1,50 @@
+<div id="tournament-header" class="bg-white rounded-2xl border-2 border-sky-200 shadow-xl p-5">
+  <div class="flex items-start justify-between gap-3 flex-wrap">
+    <div class="flex-1 min-w-0">
+      <div id="tournament-name-view" class="flex items-center gap-2 mb-1">
+        <span class="text-2xl">🏆</span>
+        <h1 class="text-xl sm:text-2xl font-bold text-sky-900 truncate">{{ tournament.name }}</h1>
+        <button type="button"
+                class="text-sky-500 hover:text-sky-700 text-sm"
+                title="Rename tournament"
+                onclick="document.getElementById('tournament-name-view').classList.add('hidden');
+                         document.getElementById('tournament-name-edit').classList.remove('hidden');
+                         document.getElementById('tournament-name-input').focus();">
+          ✏️
+        </button>
+      </div>
+      <form id="tournament-name-edit"
+            class="hidden flex items-center gap-2 mb-1"
+            hx-post="/tournaments/{{ tournament.tournament_id }}/rename"
+            hx-target="#tournament-header"
+            hx-swap="outerHTML">
+        <span class="text-2xl">🏆</span>
+        <input id="tournament-name-input"
+               name="name"
+               value="{{ tournament.name }}"
+               required
+               maxlength="120"
+               class="flex-1 min-w-0 rounded-lg border-2 border-sky-300 focus:border-sky-500 px-3 py-1 text-lg font-bold text-sky-900"/>
+        <button type="submit" class="px-3 py-1 rounded-lg bg-sky-600 text-white text-sm font-bold">Save</button>
+        <button type="button"
+                class="px-3 py-1 rounded-lg bg-slate-200 text-slate-700 text-sm font-bold"
+                onclick="document.getElementById('tournament-name-edit').classList.add('hidden');
+                         document.getElementById('tournament-name-view').classList.remove('hidden');">
+          Cancel
+        </button>
+      </form>
+      <p class="text-sky-700 text-sm font-medium">Bo{{ tournament.best_of }} • First to {{ tournament.points_to_win }}</p>
+    </div>
+    <div class="flex gap-2 items-start flex-wrap justify-end">
+      <a href="/tournaments/{{ tournament.tournament_id }}/registrations" class="px-3 py-2 rounded-xl border-2 border-emerald-200 bg-emerald-50 text-emerald-800 font-semibold text-sm">🎫 Registrations</a>
+      <a href="/" class="px-3 py-2 rounded-xl border-2 border-sky-200 bg-sky-50 text-sky-800 font-semibold">🏠</a>
+      {% if user and (user.is_admin or user.user_id == tournament.user_id) %}
+      <form hx-post="/tournaments/{{ tournament.tournament_id }}/delete"
+            hx-swap="none"
+            hx-confirm="⚠️ Delete '{{ tournament.name }}' AND all its registrations + matches? This cannot be undone.">
+        <button class="px-3 py-2 rounded-xl border-2 border-rose-300 bg-rose-50 text-rose-800 font-semibold text-sm hover:bg-rose-100">🗑 Delete</button>
+      </form>
+      {% endif %}
+    </div>
+  </div>
+</div>

@@ -80,6 +80,14 @@ def create_roster_table():
     )
 
 
+def create_registrations_table():
+    _create(
+        "tt_registrations",
+        [{"AttributeName": "registration_id", "KeyType": "HASH"}],
+        [{"AttributeName": "registration_id", "AttributeType": "S"}],
+    )
+
+
 def seed_default_settings():
     settings_table = boto3.resource("dynamodb", region_name=AWS_REGION).Table("tt_settings")
     resp = settings_table.get_item(Key={"config_id": "global"})
@@ -110,7 +118,16 @@ def create_admin_user():
         ExpressionAttributeValues={":u": "admin"},
     )
     if resp.get("Items"):
-        print("Admin user already exists — leaving as-is")
+        existing = resp["Items"][0]
+        if not existing.get("is_root_admin"):
+            users_table.update_item(
+                Key={"user_id": existing["user_id"]},
+                UpdateExpression="SET is_root_admin = :t",
+                ExpressionAttributeValues={":t": True},
+            )
+            print("Admin user already exists — flagged as root admin.")
+        else:
+            print("Admin user already exists — leaving as-is")
         return
 
     # Prefer explicit env var (never printed); otherwise generate a random one and print ONCE.
@@ -126,6 +143,7 @@ def create_admin_user():
         "username": "admin",
         "password_hash": hash_password(password),
         "is_admin": True,
+        "is_root_admin": True,
         "is_active": True,
         "email": "",
         "role": "scorer",
@@ -156,6 +174,7 @@ if __name__ == "__main__":
     create_tournaments_table()
     create_settings_table()
     create_roster_table()
+    create_registrations_table()
     seed_default_settings()
     create_admin_user()
     print()

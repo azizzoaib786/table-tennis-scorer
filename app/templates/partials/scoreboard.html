@@ -30,12 +30,19 @@
     <div class="grid grid-cols-2 gap-3">
       {# Team A #}
       <div class="rounded-2xl border-2 {% if state.match_winner == 'A' %}border-amber-400 bg-amber-50{% elif state.server == 'A' %}border-emerald-400 bg-emerald-50{% else %}border-slate-200 bg-white{% endif %} p-3 text-center shadow-sm">
+        {% if photo_a or photo_a2 %}
+        <div class="flex items-center justify-center gap-1 mb-1">
+          {% if photo_a %}<img src="{{ photo_a }}" alt="{{ match.player_a }}" class="w-12 h-12 rounded-full object-cover border-2 border-emerald-200"/>{% endif %}
+          {% if state.is_doubles and photo_a2 %}<img src="{{ photo_a2 }}" alt="{{ match.player_a2 }}" class="w-12 h-12 rounded-full object-cover border-2 border-emerald-200"/>{% endif %}
+        </div>
+        {% endif %}
         <div class="flex items-center justify-center gap-1 mb-1">
           {% if state.server == 'A' and not state.match_winner %}<span class="text-xl">🏓</span>{% endif %}
           <div class="font-bold text-emerald-900 truncate">{{ match.player_a }}</div>
         </div>
         {% if state.is_doubles %}
           <div class="text-xs text-emerald-700 truncate">/ {{ match.player_a2 }}</div>
+          {% if team_a %}<div class="text-[10px] mt-1 inline-block px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-700 font-bold border border-indigo-200">🏷️ {{ team_a }}</div>{% endif %}
         {% endif %}
         <div class="text-5xl sm:text-6xl font-black text-emerald-700 leading-none py-2">{{ state.a_score }}</div>
         <div class="text-xs font-bold text-emerald-700 mt-1">Games: {{ state.a_games }}</div>
@@ -43,12 +50,19 @@
       </div>
       {# Team B #}
       <div class="rounded-2xl border-2 {% if state.match_winner == 'B' %}border-amber-400 bg-amber-50{% elif state.server == 'B' %}border-emerald-400 bg-emerald-50{% else %}border-slate-200 bg-white{% endif %} p-3 text-center shadow-sm">
+        {% if photo_b or photo_b2 %}
+        <div class="flex items-center justify-center gap-1 mb-1">
+          {% if photo_b %}<img src="{{ photo_b }}" alt="{{ match.player_b }}" class="w-12 h-12 rounded-full object-cover border-2 border-emerald-200"/>{% endif %}
+          {% if state.is_doubles and photo_b2 %}<img src="{{ photo_b2 }}" alt="{{ match.player_b2 }}" class="w-12 h-12 rounded-full object-cover border-2 border-emerald-200"/>{% endif %}
+        </div>
+        {% endif %}
         <div class="flex items-center justify-center gap-1 mb-1">
           {% if state.server == 'B' and not state.match_winner %}<span class="text-xl">🏓</span>{% endif %}
           <div class="font-bold text-emerald-900 truncate">{{ match.player_b }}</div>
         </div>
         {% if state.is_doubles %}
           <div class="text-xs text-emerald-700 truncate">/ {{ match.player_b2 }}</div>
+          {% if team_b %}<div class="text-[10px] mt-1 inline-block px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-700 font-bold border border-indigo-200">🏷️ {{ team_b }}</div>{% endif %}
         {% endif %}
         <div class="text-5xl sm:text-6xl font-black text-emerald-700 leading-none py-2">{{ state.b_score }}</div>
         <div class="text-xs font-bold text-emerald-700 mt-1">Games: {{ state.b_games }}</div>

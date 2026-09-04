@@ -13,7 +13,8 @@
       <div class="bg-gradient-to-br from-emerald-50 to-teal-50 rounded-3xl border-2 border-emerald-300 shadow-2xl p-8">
         <div class="text-center mb-6">
           <div class="text-6xl mb-3">🏓</div>
-          <h1 class="text-3xl font-bold text-emerald-900 mb-2">Register</h1>
+          <h1 class="text-3xl font-bold text-emerald-900 mb-2">Sign up as a Scorer</h1>
+          <p class="text-sm text-emerald-700">Score matches and run tournaments.</p>
         </div>
 
         {% if error %}
@@ -36,13 +37,11 @@
             <label class="block text-sm font-bold text-emerald-900 mb-1">Password</label>
             <input type="password" name="password" required minlength="6" class="w-full rounded-xl border-2 border-emerald-200 focus:border-emerald-400 px-4 py-3"/>
           </div>
-          <div>
-            <label class="block text-sm font-bold text-emerald-900 mb-1">Role</label>
-            <select name="role" class="w-full rounded-xl border-2 border-emerald-200 focus:border-emerald-400 px-4 py-3">
-              <option value="scorer">Scorer — score matches (admin approval required)</option>
-              <option value="player">Player — track my stats (auto-approved)</option>
-            </select>
-          </div>
+          <input type="hidden" name="role" value="scorer"/>
+          <p class="text-xs text-emerald-800 bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2">
+            🎮 This form registers <strong>scorers</strong> (people who run/score matches). Accounts need admin approval before use.
+            <br>To sign up as a <strong>player</strong> for a tournament, open that tournament's register link.
+          </p>
           <button type="submit" class="w-full rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 text-white px-6 py-4 text-lg font-bold shadow-lg">
             ✨ Register
           </button>

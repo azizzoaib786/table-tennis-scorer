@@ -11,6 +11,7 @@ USERS_TABLE = os.getenv("USERS_TABLE", "tt_users")
 TOURNAMENTS_TABLE = os.getenv("TOURNAMENTS_TABLE", "tt_tournaments")
 SETTINGS_TABLE = os.getenv("SETTINGS_TABLE", "tt_settings")
 ROSTER_TABLE = os.getenv("ROSTER_TABLE", "tt_roster")
+REGISTRATIONS_TABLE = os.getenv("REGISTRATIONS_TABLE", "tt_registrations")
 
 ddb = boto3.resource("dynamodb", region_name=AWS_REGION)
 matches = ddb.Table(MATCHES_TABLE)
@@ -19,6 +20,7 @@ users = ddb.Table(USERS_TABLE)
 tournaments = ddb.Table(TOURNAMENTS_TABLE)
 settings_tbl = ddb.Table(SETTINGS_TABLE)
 roster_tbl = ddb.Table(ROSTER_TABLE)
+registrations_tbl = ddb.Table(REGISTRATIONS_TABLE)
 
 
 # ── Matches ───────────────────────────────────────────────────────────────────
@@ -46,6 +48,22 @@ def list_matches_by_user(user_id: str, limit: int = 50) -> List[Dict[str, Any]]:
     )
     items = resp.get("Items", [])
     items.sort(key=lambda x: x.get("created_at", ""), reverse=True)
+    return items
+
+
+def list_matches_by_tournament(tournament_id: str) -> List[Dict[str, Any]]:
+    """Return every match belonging to a tournament (paginated scan)."""
+    items: List[Dict[str, Any]] = []
+    kwargs = {
+        "FilterExpression": "tournament_id = :tid",
+        "ExpressionAttributeValues": {":tid": tournament_id},
+    }
+    while True:
+        resp = matches.scan(**kwargs)
+        items.extend(resp.get("Items", []))
+        if "LastEvaluatedKey" not in resp:
+            break
+        kwargs["ExclusiveStartKey"] = resp["LastEvaluatedKey"]
     return items
 
 
@@ -172,6 +190,15 @@ def set_user_role(user_id: str, role: str) -> None:
     )
 
 
+def set_user_admin(user_id: str, is_admin: bool) -> None:
+    """Grant or revoke admin rights for a user."""
+    users.update_item(
+        Key={"user_id": user_id},
+        UpdateExpression="SET is_admin = :f",
+        ExpressionAttributeValues={":f": bool(is_admin)},
+    )
+
+
 def search_users(query: str, exclude_ids: Optional[List[str]] = None) -> List[Dict[str, Any]]:
     exclude_ids = exclude_ids or []
     resp = users.scan()
@@ -230,12 +257,16 @@ def list_tournaments_by_user(user_id: str, limit: int = 50) -> List[Dict[str, An
     return items
 
 
-def update_tournament(tournament_id: str, update_expr: str, expr_vals: Dict[str, Any]) -> None:
-    tournaments.update_item(
-        Key={"tournament_id": tournament_id},
-        UpdateExpression=update_expr,
-        ExpressionAttributeValues=expr_vals,
-    )
+def update_tournament(tournament_id: str, update_expr: str, expr_vals: Dict[str, Any],
+                      expr_names: Optional[Dict[str, str]] = None) -> None:
+    kwargs: Dict[str, Any] = {
+        "Key": {"tournament_id": tournament_id},
+        "UpdateExpression": update_expr,
+        "ExpressionAttributeValues": expr_vals,
+    }
+    if expr_names:
+        kwargs["ExpressionAttributeNames"] = expr_names
+    tournaments.update_item(**kwargs)
 
 
 def delete_tournament(tournament_id: str) -> None:
@@ -312,3 +343,53 @@ def delete_roster_player(player_id: str) -> None:
 def get_roster_player(player_id: str) -> Optional[Dict[str, Any]]:
     resp = roster_tbl.get_item(Key={"player_id": player_id})
     return resp.get("Item")
+
+
+# ── Tournament registrations (public sign-up to play) ─────────────────────────
+def put_registration(item: Dict[str, Any]) -> None:
+    registrations_tbl.put_item(Item=item)
+
+
+def get_registration(registration_id: str) -> Optional[Dict[str, Any]]:
+    resp = registrations_tbl.get_item(Key={"registration_id": registration_id})
+    return resp.get("Item")
+
+
+def list_registrations_by_tournament(tournament_id: str) -> List[Dict[str, Any]]:
+    resp = registrations_tbl.scan(
+        FilterExpression="tournament_id = :tid",
+        ExpressionAttributeValues={":tid": tournament_id},
+    )
+    items = resp.get("Items", [])
+    items.sort(key=lambda x: x.get("created_at", ""))
+    return items
+
+
+def list_all_registrations() -> List[Dict[str, Any]]:
+    resp = registrations_tbl.scan()
+    items = resp.get("Items", [])
+    items.sort(key=lambda x: x.get("created_at", ""), reverse=True)
+    return items
+
+
+def update_registration_paid(registration_id: str, paid: bool) -> None:
+    registrations_tbl.update_item(
+        Key={"registration_id": registration_id},
+        UpdateExpression="SET payment_done = :p",
+        ExpressionAttributeValues={":p": bool(paid)},
+    )
+
+
+def delete_registration(registration_id: str) -> None:
+    registrations_tbl.delete_item(Key={"registration_id": registration_id})
+
+
+def find_registration_by_name(tournament_id: str, name: str) -> Optional[Dict[str, Any]]:
+    """Case-insensitive lookup used to auto-link photos to a match."""
+    key = (name or "").strip().lower()
+    if not key:
+        return None
+    for r in list_registrations_by_tournament(tournament_id):
+        if r.get("name", "").strip().lower() == key:
+            return r
+    return None

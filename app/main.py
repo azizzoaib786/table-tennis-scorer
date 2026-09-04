@@ -1,22 +1,32 @@
 import uuid
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
+import io
+import os
 
-from fastapi import FastAPI, Request, Form, HTTPException, Response
-from fastapi.responses import HTMLResponse, RedirectResponse, FileResponse, JSONResponse
+import boto3
+from botocore.exceptions import ClientError
+
+from fastapi import FastAPI, Request, Form, HTTPException, Response, UploadFile, File
+from fastapi.responses import HTMLResponse, RedirectResponse, FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 from .db import (
     put_match, get_match, list_matches, list_matches_by_user, update_match, delete_match,
+    list_matches_by_tournament,
     put_event, list_events, delete_last_event,
     create_user, get_user_by_username, get_user_by_id, get_user_by_email,
     list_all_users, delete_user, update_user_password, toggle_user_active,
     set_user_role, search_users, update_user_stats, set_user_must_change_password,
+    set_user_admin,
     put_tournament, get_tournament, list_tournaments, list_tournaments_by_user,
     update_tournament, delete_tournament,
     get_settings, update_settings,
     add_roster_player, list_roster, delete_roster_player, get_roster_player,
+    put_registration, get_registration, list_registrations_by_tournament,
+    list_all_registrations, update_registration_paid, delete_registration,
+    find_registration_by_name,
 )
 from .logic import compute_state, player_name
 from .auth import hash_password, verify_password, create_session_token, verify_session_token
@@ -24,6 +34,78 @@ from .auth import hash_password, verify_password, create_session_token, verify_s
 app = FastAPI(title="Table Tennis Scorer")
 templates = Jinja2Templates(directory="app/templates")
 app.mount("/static", StaticFiles(directory="app/static"), name="static")
+
+
+# ── S3 photo storage ─────────────────────────────────────────────────────────
+# Photos live in a private S3 bucket (TT_S3_BUCKET). We store the S3 key on
+# each registration and generate a short-lived presigned URL when rendering.
+AWS_REGION = os.getenv("AWS_REGION", "eu-west-1")
+S3_BUCKET = os.getenv("TT_S3_BUCKET", "").strip()
+S3_PREFIX = os.getenv("TT_S3_PREFIX", "registrations").strip("/")
+PRESIGN_TTL_SECONDS = int(os.getenv("TT_S3_PRESIGN_TTL", "3600"))
+ALLOWED_PHOTO_EXT = {".jpg", ".jpeg", ".png", ".webp", ".gif"}
+ALLOWED_PHOTO_MIME = {
+    "image/jpeg", "image/png", "image/webp", "image/gif",
+}
+MAX_PHOTO_BYTES = 5 * 1024 * 1024  # 5 MB
+s3_client = boto3.client("s3", region_name=AWS_REGION)
+
+
+def _upload_photo_to_s3(upload: "UploadFile", registration_id: str) -> str:
+    """Store an uploaded photo in S3 under registrations/{id}.{ext}.
+    Returns the S3 key. Raises HTTPException on bad input / missing bucket."""
+    if not S3_BUCKET:
+        raise HTTPException(500, "Photo uploads disabled — TT_S3_BUCKET not configured")
+    filename = (upload.filename or "").lower()
+    ext = "." + filename.rsplit(".", 1)[-1] if "." in filename else ""
+    if ext not in ALLOWED_PHOTO_EXT:
+        raise HTTPException(400, f"Photo must be one of {sorted(ALLOWED_PHOTO_EXT)}")
+    content_type = (upload.content_type or "").lower()
+    if content_type and content_type not in ALLOWED_PHOTO_MIME:
+        raise HTTPException(400, f"Unsupported photo content-type: {content_type}")
+    data = upload.file.read(MAX_PHOTO_BYTES + 1)
+    if len(data) > MAX_PHOTO_BYTES:
+        raise HTTPException(400, f"Photo too large (max {MAX_PHOTO_BYTES // (1024*1024)} MB)")
+    if not data:
+        raise HTTPException(400, "Empty photo upload")
+    key = f"{S3_PREFIX}/{registration_id}{ext}"
+    try:
+        s3_client.put_object(
+            Bucket=S3_BUCKET,
+            Key=key,
+            Body=data,
+            ContentType=content_type or "application/octet-stream",
+            ServerSideEncryption="AES256",
+        )
+    except ClientError as e:
+        raise HTTPException(500, f"S3 upload failed: {e.response.get('Error', {}).get('Code', 'Unknown')}")
+    return key
+
+
+def _delete_photo_from_s3(key: str) -> None:
+    if not key or not S3_BUCKET:
+        return
+    try:
+        s3_client.delete_object(Bucket=S3_BUCKET, Key=key)
+    except ClientError:
+        pass  # best-effort
+
+
+def _presigned_photo_url(key: str) -> Optional[str]:
+    """Short-lived signed GET URL for private S3 objects. Empty key → None."""
+    if not key or not S3_BUCKET:
+        return None
+    try:
+        return s3_client.generate_presigned_url(
+            "get_object",
+            Params={"Bucket": S3_BUCKET, "Key": key},
+            ExpiresIn=PRESIGN_TTL_SECONDS,
+        )
+    except ClientError:
+        return None
+
+
+templates.env.globals["photo_url"] = _presigned_photo_url
 
 
 def _advancing_participants(tournament: dict, round_num: int) -> list:
@@ -125,6 +207,32 @@ def require_admin(request: Request) -> Dict[str, Any]:
     return user
 
 
+def _is_root_admin(user: Dict[str, Any]) -> bool:
+    """Root admin = the seeded 'admin' account. Only role that can mint new admins."""
+    if not user or not user.get("is_admin"):
+        return False
+    return bool(user.get("is_root_admin")) or user.get("username") == "admin"
+
+
+def require_root_admin(request: Request) -> Dict[str, Any]:
+    user = require_admin(request)
+    if not _is_root_admin(user):
+        raise HTTPException(status_code=403, detail="Only the root admin can manage admins")
+    return user
+
+
+def _render_user_management(request: Request, **extra):
+    """Render the user-management partial with the current user's root-admin flag."""
+    current_user = get_current_user(request)
+    ctx = {
+        "request": request,
+        "all_users": list_all_users(),
+        "is_root_admin": _is_root_admin(current_user or {}),
+    }
+    ctx.update(extra)
+    return templates.TemplateResponse("partials/user_management.html", ctx)
+
+
 def require_scorer(request: Request) -> Dict[str, Any]:
     user = require_auth(request)
     if user.get("role", "scorer") == "player" and not user.get("is_admin"):
@@ -166,12 +274,52 @@ def match_context(request: Request, match: Dict[str, Any], user: Optional[Dict[s
                   flash: Optional[str] = None) -> Dict[str, Any]:
     ev = list_events(match["match_id"])
     state = compute_state(match, ev)
+    tid = match.get("tournament_id", "")
+    photos: Dict[str, Optional[str]] = {"a": None, "b": None, "a2": None, "b2": None}
+    team_a = team_b = ""
+    if tid:
+        # Photos for each slot
+        for slot, field in (("a", "player_a"), ("b", "player_b"),
+                            ("a2", "player_a2"), ("b2", "player_b2")):
+            nm = (match.get(field) or "").strip()
+            if not nm:
+                continue
+            reg = find_registration_by_name(tid, nm)
+            if reg and reg.get("photo_key"):
+                photos[slot] = _presigned_photo_url(reg["photo_key"])
+        # Team names (doubles): resolve from either primary or partner registration
+        if match.get("match_type") == "doubles":
+            for side, primary_field, partner_field in (
+                ("a", "player_a", "player_a2"),
+                ("b", "player_b", "player_b2"),
+            ):
+                nm = (match.get(primary_field) or "").strip()
+                if not nm:
+                    continue
+                reg = find_registration_by_name(tid, nm)
+                team = (reg.get("team_name") if reg else "") or ""
+                if not team:
+                    # try the partner side too
+                    nm2 = (match.get(partner_field) or "").strip()
+                    if nm2:
+                        reg2 = find_registration_by_name(tid, nm2)
+                        team = (reg2.get("team_name") if reg2 else "") or ""
+                if side == "a":
+                    team_a = team
+                else:
+                    team_b = team
     return {
         "request": request,
         "user": user,
         "match": match,
         "state": state,
         "flash": flash,
+        "photo_a": photos["a"],
+        "photo_b": photos["b"],
+        "photo_a2": photos["a2"],
+        "photo_b2": photos["b2"],
+        "team_a": team_a,
+        "team_b": team_b,
     }
 
 
@@ -254,17 +402,13 @@ async def register(request: Request, username: str = Form(...), email: str = For
             "request": request, "error": "Email already registered"
         }, status_code=400)
 
-    if role not in ("scorer", "player"):
-        role = "scorer"
+    # Auth sign-up is scorer-only. Players register per-tournament via the
+    # public /tournaments/{id}/register form (no account required).
+    role = "scorer"
 
     user_id = uuid.uuid4().hex
     create_user(user_id, username, hash_password(password), is_admin=False, email=email, role=role)
-    # Players are auto-activated, scorers need admin approval
-    if role == "player":
-        toggle_user_active(user_id, True)
-        success_msg = "Player profile created — you can log in now."
-    else:
-        success_msg = "Scorer account created. Contact the admin to activate your account before logging in."
+    success_msg = "Scorer account created. Contact the admin to activate your account before logging in."
 
     return templates.TemplateResponse("register.html", {
         "request": request, "success": success_msg
@@ -361,6 +505,7 @@ def admin_panel(request: Request):
         "matches": all_matches,
         "all_users": all_users,
         "tournaments": all_tournaments,
+        "is_root_admin": _is_root_admin(admin),
     })
 
 
@@ -439,8 +584,30 @@ async def admin_delete_match(request: Request, match_id: str):
 @app.post("/admin/tournaments/{tournament_id}/delete")
 async def admin_delete_tournament(request: Request, tournament_id: str):
     require_admin(request)
-    delete_tournament(tournament_id)
+    _cascade_delete_tournament(tournament_id)
     return HTMLResponse("", status_code=200, headers={"HX-Refresh": "true"})
+
+
+def _cascade_delete_tournament(tournament_id: str) -> Dict[str, int]:
+    """Delete a tournament plus all of its registrations and matches.
+    Returns a small stats dict for logging/UX."""
+    regs = list_registrations_by_tournament(tournament_id)
+    for r in regs:
+        delete_registration(r["registration_id"])
+    ms = list_matches_by_tournament(tournament_id)
+    for m in ms:
+        delete_match(m["match_id"])
+    delete_tournament(tournament_id)
+    return {"registrations": len(regs), "matches": len(ms)}
+
+
+@app.post("/tournaments/{tournament_id}/delete", response_class=HTMLResponse)
+def delete_tournament_route(request: Request, tournament_id: str):
+    """Cascade-delete a tournament from its own page. Admin or owner only."""
+    user, t = check_tournament_access(request, tournament_id)
+    _cascade_delete_tournament(tournament_id)
+    # After delete, send the browser home.
+    return HTMLResponse("", status_code=200, headers={"HX-Redirect": "/"})
 
 
 @app.post("/admin/users/{user_id}/toggle-active")
@@ -452,9 +619,7 @@ async def admin_toggle_user(request: Request, user_id: str):
     if target.get("is_admin"):
         raise HTTPException(400, "Cannot deactivate admin users")
     toggle_user_active(user_id, not target.get("is_active", True))
-    return templates.TemplateResponse("partials/user_management.html", {
-        "request": request, "all_users": list_all_users()
-    })
+    return _render_user_management(request)
 
 
 @app.post("/admin/users/{user_id}/make-scorer")
@@ -462,9 +627,7 @@ async def admin_make_scorer(request: Request, user_id: str):
     require_admin(request)
     set_user_role(user_id, "scorer")
     toggle_user_active(user_id, True)
-    return templates.TemplateResponse("partials/user_management.html", {
-        "request": request, "all_users": list_all_users()
-    })
+    return _render_user_management(request)
 
 
 @app.post("/admin/users/{user_id}/make-player")
@@ -472,9 +635,7 @@ async def admin_make_player(request: Request, user_id: str):
     require_admin(request)
     set_user_role(user_id, "player")
     toggle_user_active(user_id, True)
-    return templates.TemplateResponse("partials/user_management.html", {
-        "request": request, "all_users": list_all_users()
-    })
+    return _render_user_management(request)
 
 
 @app.post("/admin/users/{user_id}/reset-password")
@@ -491,14 +652,74 @@ async def admin_reset_password(request: Request, user_id: str):
     update_user_password(user_id, hash_password(temp_password))
     set_user_must_change_password(user_id, True)
     username = target["username"]
-    return templates.TemplateResponse("partials/user_management.html", {
-        "request": request,
-        "all_users": list_all_users(),
-        "reset_password_msg": (
+    return _render_user_management(
+        request,
+        reset_password_msg=(
             f"🔑 Temp password for {username}: {temp_password} "
             f"— share it securely. They must change it on next login."
         ),
-    })
+    )
+
+
+@app.post("/admin/users/create-admin", response_class=HTMLResponse)
+async def admin_create_admin(request: Request,
+                             username: str = Form(...),
+                             password: str = Form(""),
+                             email: str = Form("")):
+    """Root-admin-only: create a brand-new admin account."""
+    require_root_admin(request)
+    uname = (username or "").strip().lower()
+    if not uname:
+        raise HTTPException(400, "Username is required")
+    if get_user_by_username(uname):
+        raise HTTPException(400, f"Username '{uname}' is already taken")
+
+    pw = (password or "").strip()
+    generated = False
+    if not pw:
+        import secrets, string
+        alphabet = string.ascii_letters + string.digits
+        pw = ''.join(secrets.choice(alphabet) for _ in range(12))
+        generated = True
+    elif len(pw) < 8:
+        raise HTTPException(400, "Password must be at least 8 characters")
+
+    new_id = uuid.uuid4().hex
+    create_user(
+        user_id=new_id,
+        username=uname,
+        password_hash=hash_password(pw),
+        is_admin=True,
+        email=(email or "").strip(),
+        role="scorer",
+    )
+    # Force password change on first login when we generated the temp password.
+    if generated:
+        set_user_must_change_password(new_id, True)
+
+    msg = (
+        f"👑 Admin '{uname}' created. Temp password: {pw} — share securely, "
+        f"they must change it on first login."
+    ) if generated else f"👑 Admin '{uname}' created."
+    return _render_user_management(request, reset_password_msg=msg)
+
+
+@app.post("/admin/users/{user_id}/revoke-admin", response_class=HTMLResponse)
+async def admin_revoke_admin(request: Request, user_id: str):
+    """Root-admin-only: demote another admin back to scorer. Cannot revoke root."""
+    root = require_root_admin(request)
+    target = get_user_by_id(user_id)
+    if not target:
+        raise HTTPException(404, "User not found")
+    if not target.get("is_admin"):
+        raise HTTPException(400, "User is not an admin")
+    if target.get("is_root_admin") or target.get("username") == "admin":
+        raise HTTPException(400, "Cannot revoke the root admin")
+    if target["user_id"] == root["user_id"]:
+        raise HTTPException(400, "You cannot revoke your own admin rights")
+    set_user_admin(user_id, False)
+    set_user_role(user_id, "scorer")
+    return _render_user_management(request)
 
 
 @app.delete("/admin/users/{user_id}")
@@ -513,9 +734,7 @@ async def admin_delete_user(request: Request, user_id: str):
     for m in list_matches_by_user(user_id):
         delete_match(m["match_id"])
     delete_user(user_id)
-    return templates.TemplateResponse("partials/user_management.html", {
-        "request": request, "all_users": list_all_users()
-    })
+    return _render_user_management(request)
 
 
 # ── Matches: create + view ────────────────────────────────────────────────────
@@ -829,10 +1048,17 @@ def create_tournament(request: Request,
                       points_to_win: int = Form(0),
                       service_interval: int = Form(0),
                       deuce_interval: int = Form(0),
-                      rounds_seed: str = Form("")):
+                      rounds_seed: str = Form(""),
+                      format: str = Form("doubles"),
+                      registration_start: str = Form(""),
+                      registration_end: str = Form("")):
     user = require_scorer(request)
     cfg = get_settings()
     tid = uuid.uuid4().hex
+
+    fmt = (format or "doubles").strip().lower()
+    if fmt not in ("singles", "doubles"):
+        fmt = "doubles"
 
     # Optional: seed rounds from a textarea. One round name per line
     # (commas and semicolons also accepted).
@@ -858,6 +1084,10 @@ def create_tournament(request: Request,
         "created_at": now_ts(),
         "participants": [],
         "rounds": seeded_rounds,
+        "format": fmt,
+        "registration_start": registration_start.strip(),
+        "registration_end": registration_end.strip(),
+        "status": "registration",
     })
     return RedirectResponse(f"/tournaments/{tid}", status_code=303)
 
@@ -872,6 +1102,302 @@ def tournament_page(request: Request, tournament_id: str):
         "request": request, "user": user, "tournament": t,
         "roster": list_roster(),
     })
+
+
+# ── Public tournament registration (players sign up to play) ─────────────────
+def _registration_window_state(t: Dict[str, Any]) -> Dict[str, Any]:
+    """Return {is_open, reason} based on tournament registration window + status."""
+    status = (t.get("status") or "registration").lower()
+    if status != "registration":
+        return {"is_open": False, "reason": "Registration is closed — the tournament has already started."}
+    start_s = (t.get("registration_start") or "").strip()
+    end_s = (t.get("registration_end") or "").strip()
+    now = now_ts()  # ISO-8601 in UTC
+    # datetime-local inputs are naive local time; we compare as strings which
+    # is not perfectly accurate across timezones but is fine for open/close gating.
+    if start_s and now < start_s:
+        return {"is_open": False, "reason": f"Registration opens on {start_s.replace('T', ' ')[:16]}."}
+    if end_s and now > end_s:
+        return {"is_open": False, "reason": f"Registration closed on {end_s.replace('T', ' ')[:16]}."}
+    return {"is_open": True, "reason": ""}
+
+
+@app.get("/tournaments/{tournament_id}/register", response_class=HTMLResponse)
+def registration_form(request: Request, tournament_id: str):
+    t = must_tournament(tournament_id)  # no auth — anyone with the link
+    window = _registration_window_state(t)
+    # Admin/owner sees the form even if the window is closed (for manual add).
+    current_user = get_current_user(request)
+    is_admin_view = bool(current_user and (
+        current_user.get("is_admin") or current_user.get("user_id") == t.get("user_id")
+    ))
+    if is_admin_view:
+        window = {"is_open": True, "reason": ""}
+    return templates.TemplateResponse("tournament_register.html", {
+        "request": request, "tournament": t, "flash": "",
+        "window": window,
+        "is_admin_view": is_admin_view,
+    })
+
+
+@app.post("/tournaments/{tournament_id}/register", response_class=HTMLResponse)
+async def registration_submit(request: Request, tournament_id: str,
+                              name: str = Form(...),
+                              email: str = Form(...),
+                              phone: str = Form(""),
+                              its: str = Form(""),
+                              age: int = Form(0),
+                              experience: str = Form("beginner"),
+                              match_type: str = Form("singles"),
+                              team_name: str = Form(""),
+                              partner_name: str = Form(""),
+                              partner_email: str = Form(""),
+                              partner_phone: str = Form(""),
+                              partner_its: str = Form(""),
+                              partner_age: int = Form(0),
+                              partner_experience: str = Form("beginner"),
+                              photo: Optional[UploadFile] = File(None),
+                              partner_photo: Optional[UploadFile] = File(None)):
+    t = must_tournament(tournament_id)
+
+    # Admins/owners can bypass the registration window (used by the manual-add flow).
+    is_manual_add = False
+    current_user = get_current_user(request)
+    if current_user and (
+        current_user.get("is_admin") or current_user.get("user_id") == t.get("user_id")
+    ):
+        is_manual_add = True
+
+    if not is_manual_add:
+        window = _registration_window_state(t)
+        if not window["is_open"]:
+            raise HTTPException(403, window["reason"])
+
+    name = name.strip()
+    email = email.strip().lower()
+    phone_v = phone.strip()
+    its_v = its.strip()
+    experience = experience.strip().lower()
+    try:
+        age_val = int(age) if age else 0
+    except (TypeError, ValueError):
+        age_val = 0
+
+    # Primary block — every field is required
+    missing_primary = []
+    if not name: missing_primary.append("name")
+    if not email: missing_primary.append("email")
+    if not phone_v: missing_primary.append("phone")
+    if not its_v: missing_primary.append("ITS number")
+    if age_val <= 0: missing_primary.append("age")
+    if experience not in ("beginner", "amateur", "expert"):
+        missing_primary.append("experience")
+    if photo is None or not (photo.filename or "").strip():
+        missing_primary.append("photo")
+    if missing_primary:
+        raise HTTPException(400, "Missing required fields: " + ", ".join(missing_primary))
+
+    match_type = (match_type or "singles").strip().lower()
+    if match_type not in ("singles", "doubles"):
+        match_type = "singles"
+
+    # Validate partner block for doubles
+    partner_name = partner_name.strip()
+    partner_email = partner_email.strip().lower()
+    partner_phone_v = partner_phone.strip()
+    partner_its_v = partner_its.strip()
+    partner_experience = partner_experience.strip().lower()
+    try:
+        partner_age_val = int(partner_age) if partner_age else 0
+    except (TypeError, ValueError):
+        partner_age_val = 0
+
+    if match_type == "doubles":
+        missing = []
+        if not partner_name: missing.append("partner name")
+        if not partner_email: missing.append("partner email")
+        if not partner_phone_v: missing.append("partner phone")
+        if not partner_its_v: missing.append("partner ITS number")
+        if partner_age_val <= 0: missing.append("partner age")
+        if partner_experience not in ("beginner", "amateur", "expert"):
+            missing.append("partner experience")
+        if partner_photo is None or not (partner_photo.filename or "").strip():
+            missing.append("partner photo")
+        if not (team_name or "").strip():
+            missing.append("team name")
+        if missing:
+            raise HTTPException(400, "Doubles registration missing: " + ", ".join(missing))
+        if partner_name.lower() == name.lower():
+            raise HTTPException(400, "Partner must be a different person")
+    if partner_experience not in ("beginner", "amateur", "expert"):
+        partner_experience = "beginner"
+
+    team_name = (team_name or "").strip()
+
+    pair_id = uuid.uuid4().hex if match_type == "doubles" else ""
+
+    # Primary registration
+    reg_id = uuid.uuid4().hex
+    photo_key = ""
+    if photo is not None and (photo.filename or "").strip():
+        photo_key = _upload_photo_to_s3(photo, reg_id)
+    primary_item = {
+        "registration_id": reg_id,
+        "tournament_id": tournament_id,
+        "name": name,
+        "email": email,
+        "phone": phone_v,
+        "its": its_v,
+        "age": age_val,
+        "experience": experience,
+        "photo_key": photo_key,
+        "payment_done": False,
+        "created_at": now_ts(),
+        "match_type": match_type,
+    }
+    if match_type == "doubles":
+        primary_item["pair_id"] = pair_id
+        primary_item["partner_name"] = partner_name
+        primary_item["team_name"] = team_name
+    put_registration(primary_item)
+
+    # Partner registration (linked by pair_id)
+    if match_type == "doubles":
+        partner_reg_id = uuid.uuid4().hex
+        partner_photo_key = ""
+        if partner_photo is not None and (partner_photo.filename or "").strip():
+            partner_photo_key = _upload_photo_to_s3(partner_photo, partner_reg_id)
+        put_registration({
+            "registration_id": partner_reg_id,
+            "tournament_id": tournament_id,
+            "name": partner_name,
+            "email": partner_email,
+            "phone": partner_phone_v,
+            "its": partner_its_v,
+            "age": partner_age_val,
+            "experience": partner_experience,
+            "photo_key": partner_photo_key,
+            "payment_done": False,
+            "created_at": now_ts(),
+            "match_type": "doubles",
+            "pair_id": pair_id,
+            "partner_name": name,
+            "team_name": team_name,
+        })
+
+    flash_msg = (
+        f"✅ Thanks {name}! Team \"{team_name}\" ({name} & {partner_name}) is registered for "
+        f"{t.get('name', 'the tournament')}."
+        if match_type == "doubles"
+        else f"✅ Thanks {name}! You're registered for {t.get('name', 'the tournament')}. See you at the table."
+    )
+    return templates.TemplateResponse("tournament_register.html", {
+        "request": request, "tournament": t,
+        "flash": flash_msg,
+        "just_registered": True,
+    })
+
+
+# ── Registrations management (scorer/admin) ──────────────────────────────────
+@app.get("/tournaments/{tournament_id}/registrations", response_class=HTMLResponse)
+def registrations_page(request: Request, tournament_id: str):
+    user, t = check_tournament_access(request, tournament_id)
+    regs = list_registrations_by_tournament(tournament_id)
+    return templates.TemplateResponse("tournament_registrations.html", {
+        "request": request, "user": user, "tournament": t, "registrations": regs,
+    })
+
+
+@app.post("/registrations/{registration_id}/toggle-paid", response_class=HTMLResponse)
+def registrations_toggle_paid(request: Request, registration_id: str):
+    reg = get_registration(registration_id)
+    if not reg:
+        raise HTTPException(404, "Registration not found")
+    # Only admin or the tournament owner may flip payment status
+    user, t = check_tournament_access(request, reg["tournament_id"])
+    update_registration_paid(registration_id, not bool(reg.get("payment_done")))
+    return HTMLResponse("", status_code=200, headers={"HX-Refresh": "true"})
+
+
+@app.post("/registrations/{registration_id}/delete", response_class=HTMLResponse)
+def registrations_delete(request: Request, registration_id: str):
+    reg = get_registration(registration_id)
+    if not reg:
+        raise HTTPException(404, "Registration not found")
+    user, t = check_tournament_access(request, reg["tournament_id"])
+    _delete_photo_from_s3(reg.get("photo_key", ""))
+    delete_registration(registration_id)
+    return HTMLResponse("", status_code=200, headers={"HX-Refresh": "true"})
+
+
+# ── Registrations export (HTML + Excel) ──────────────────────────────────────
+def _registrations_rows(tournament_id: str) -> List[Dict[str, Any]]:
+    return list_registrations_by_tournament(tournament_id)
+
+
+@app.get("/tournaments/{tournament_id}/registrations/export.html", response_class=HTMLResponse)
+def registrations_export_html(request: Request, tournament_id: str):
+    user, t = check_tournament_access(request, tournament_id)
+    regs = _registrations_rows(tournament_id)
+    return templates.TemplateResponse("registrations_export.html", {
+        "request": request, "tournament": t, "registrations": regs,
+    })
+
+
+@app.get("/tournaments/{tournament_id}/registrations/export.xlsx")
+def registrations_export_xlsx(request: Request, tournament_id: str):
+    user, t = check_tournament_access(request, tournament_id)
+    try:
+        from openpyxl import Workbook
+        from openpyxl.styles import Font, PatternFill, Alignment
+    except ImportError:
+        raise HTTPException(500, "openpyxl not installed on the server — run `pip install -r requirements.txt`")
+
+    regs = _registrations_rows(tournament_id)
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Registrations"
+
+    headers = ["#", "Name", "Email", "Phone", "ITS", "Age", "Experience",
+               "Format", "Team", "Partner", "Payment done", "Registered at"]
+    ws.append(headers)
+    header_font = Font(bold=True, color="FFFFFF")
+    header_fill = PatternFill(start_color="047857", end_color="047857", fill_type="solid")
+    for cell in ws[1]:
+        cell.font = header_font
+        cell.fill = header_fill
+        cell.alignment = Alignment(horizontal="center", vertical="center")
+
+    for idx, r in enumerate(regs, start=1):
+        is_doubles = r.get("match_type") == "doubles"
+        ws.append([
+            idx,
+            r.get("name", ""),
+            r.get("email", ""),
+            r.get("phone", ""),
+            r.get("its", ""),
+            int(r.get("age", 0) or 0),
+            (r.get("experience", "") or "").title(),
+            (r.get("match_type", "singles") or "singles").title(),
+            r.get("team_name", "") if is_doubles else "",
+            r.get("partner_name", "") if is_doubles else "",
+            "Yes" if r.get("payment_done") else "No",
+            r.get("created_at", ""),
+        ])
+
+    for col_idx, width in enumerate([5, 26, 30, 20, 16, 6, 14, 12, 24, 26, 14, 22], start=1):
+        ws.column_dimensions[chr(64 + col_idx)].width = width
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    safe_name = "".join(c if c.isalnum() or c in "-_" else "_" for c in t.get("name", "tournament"))
+    filename = f"{safe_name}-registrations.xlsx"
+    return StreamingResponse(
+        buf,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 @app.post("/tournaments/{tournament_id}/participants", response_class=HTMLResponse)
@@ -966,6 +1492,189 @@ def bulk_add_participants(request: Request, tournament_id: str, names: str = For
         "roster": list_roster(),
         "flash": " • ".join(flash_bits) or "No participants added",
     })
+
+
+@app.post("/tournaments/{tournament_id}/rename", response_class=HTMLResponse)
+def rename_tournament(request: Request, tournament_id: str, name: str = Form(...)):
+    user, t = check_tournament_access(request, tournament_id)
+    new_name = name.strip()
+    if not new_name:
+        raise HTTPException(400, "Tournament name cannot be empty")
+    if len(new_name) > 120:
+        raise HTTPException(400, "Tournament name too long (max 120 chars)")
+    update_tournament(
+        tournament_id,
+        "SET #n = :n",
+        {":n": new_name},
+        expr_names={"#n": "name"},
+    )
+    # Return the refreshed header snippet so htmx can swap it in-place
+    t2 = must_tournament(tournament_id)
+    return templates.TemplateResponse("partials/tournament_header.html", {
+        "request": request, "user": user, "tournament": t2,
+    })
+
+
+@app.post("/tournaments/{tournament_id}/registration-settings", response_class=HTMLResponse)
+def update_registration_settings(request: Request, tournament_id: str,
+                                 format: str = Form("doubles"),
+                                 registration_start: str = Form(""),
+                                 registration_end: str = Form("")):
+    user, t = check_tournament_access(request, tournament_id)
+    fmt = (format or "doubles").strip().lower()
+    if fmt not in ("singles", "doubles"):
+        raise HTTPException(400, "format must be 'singles' or 'doubles'")
+    update_tournament(
+        tournament_id,
+        "SET #f = :f, registration_start = :rs, registration_end = :re",
+        {":f": fmt, ":rs": registration_start.strip(), ":re": registration_end.strip()},
+        expr_names={"#f": "format"},
+    )
+    return HTMLResponse("", status_code=200, headers={"HX-Refresh": "true"})
+
+
+def _group_registrations_for_build(regs: List[Dict[str, Any]]):
+    """Split a list of registrations into (pairs, lone_singles).
+    - pairs: list of dicts {pair_id, team_name, primary, partner}
+    - lone_singles: list of registrations with no partner link.
+    """
+    by_pair: Dict[str, List[Dict[str, Any]]] = {}
+    lone: List[Dict[str, Any]] = []
+    for r in regs:
+        pid = r.get("pair_id") or ""
+        if r.get("match_type") == "doubles" and pid:
+            by_pair.setdefault(pid, []).append(r)
+        else:
+            lone.append(r)
+    pairs: List[Dict[str, Any]] = []
+    for pid, members in by_pair.items():
+        if len(members) < 2:
+            # Orphaned doubles row — treat the survivor as a lone single.
+            lone.extend(members)
+            continue
+        # Deterministic primary/partner ordering by created_at.
+        members.sort(key=lambda m: m.get("created_at", ""))
+        primary, partner = members[0], members[1]
+        pairs.append({
+            "pair_id": pid,
+            "team_name": (primary.get("team_name") or partner.get("team_name") or "").strip(),
+            "primary": primary,
+            "partner": partner,
+        })
+    return pairs, lone
+
+
+@app.get("/tournaments/{tournament_id}/build-participants", response_class=HTMLResponse)
+def build_participants_form(request: Request, tournament_id: str):
+    """Admin builder page: pick format, pair up lone singles, then confirm."""
+    user, t = check_tournament_access(request, tournament_id)
+    if (t.get("status") or "registration") != "registration":
+        raise HTTPException(400, "This tournament has already been built")
+    all_regs = list_registrations_by_tournament(tournament_id)
+    paid_regs = [r for r in all_regs if r.get("payment_done")]
+    unpaid_count = len(all_regs) - len(paid_regs)
+    paid_pairs, paid_lone_singles = _group_registrations_for_build(paid_regs)
+    paid_lone_singles.sort(key=lambda r: r.get("created_at", ""))
+    return templates.TemplateResponse("tournament_build.html", {
+        "request": request, "user": user, "tournament": t,
+        "paid_pairs": paid_pairs,
+        "paid_lone_singles": paid_lone_singles,
+        "unpaid_count": unpaid_count,
+        "total_regs": len(all_regs),
+    })
+
+
+@app.post("/tournaments/{tournament_id}/build-participants", response_class=HTMLResponse)
+async def build_participants_from_registrations(request: Request, tournament_id: str):
+    """Turn registrations into tournament participants and flip status → active.
+    Reads the format + optional lone-single pair choices from the builder form."""
+    user, t = check_tournament_access(request, tournament_id)
+    if (t.get("status") or "registration") != "registration":
+        raise HTTPException(400, "This tournament has already been built")
+
+    form = await request.form()
+    fmt = (form.get("format") or "doubles").strip().lower()
+    if fmt not in ("singles", "doubles"):
+        raise HTTPException(400, "format must be 'singles' or 'doubles'")
+    include_unpaid = (form.get("include_unpaid") or "") in ("on", "true", "1", "yes")
+
+    all_regs = list_registrations_by_tournament(tournament_id)
+    regs = all_regs if include_unpaid else [r for r in all_regs if r.get("payment_done")]
+    if not regs:
+        raise HTTPException(400, "No matching registrations to import.")
+
+    pairs, lone_singles = _group_registrations_for_build(regs)
+    reg_by_id = {r["registration_id"]: r for r in regs}
+
+    participants = list(t.get("participants", []))
+    existing_names = {p.get("name", "").strip().lower() for p in participants}
+
+    def _add_singles_participant(reg: Dict[str, Any]) -> None:
+        nm = (reg.get("name") or "").strip()
+        if not nm or nm.lower() in existing_names:
+            return
+        participants.append({
+            "id": uuid.uuid4().hex[:8],
+            "name": nm,
+            "user_id": "",
+        })
+        existing_names.add(nm.lower())
+
+    def _add_doubles_participant(primary: Dict[str, Any], partner: Dict[str, Any],
+                                 team_name: str, pair_id: str = "") -> None:
+        nm = (primary.get("name") or "").strip()
+        if not nm or nm.lower() in existing_names:
+            return
+        participants.append({
+            "id": uuid.uuid4().hex[:8],
+            "name": nm,
+            "user_id": "",
+            "pair_id": pair_id or uuid.uuid4().hex,
+            "partner_name": (partner.get("name") or "").strip(),
+            "team_name": (team_name or "").strip() or f"{primary.get('name','')} & {partner.get('name','')}",
+        })
+        existing_names.add(nm.lower())
+
+    if fmt == "singles":
+        # Every registration → 1 participant. Pairs are split into individuals.
+        for r in regs:
+            _add_singles_participant(r)
+    else:
+        # DOUBLES: registered pairs auto-import, admin-selected lone-single pairs also import.
+        for pair in pairs:
+            _add_doubles_participant(
+                pair["primary"], pair["partner"],
+                team_name=pair.get("team_name", ""),
+                pair_id=pair["pair_id"],
+            )
+        # Collect admin-formed pairs from the form (lone_pair_<reg_id> = <other_reg_id>).
+        seen: set = set()
+        for s in lone_singles:
+            sid = s["registration_id"]
+            if sid in seen:
+                continue
+            other_id = (form.get(f"lone_pair_{sid}") or "").strip()
+            if not other_id or other_id == sid or other_id in seen:
+                continue
+            other = reg_by_id.get(other_id)
+            if not other:
+                continue
+            seen.add(sid)
+            seen.add(other_id)
+            team_name = (form.get(f"lone_team_{sid}") or "").strip()
+            _add_doubles_participant(s, other, team_name=team_name)
+        # Any unpaired lone singles are dropped from a doubles tournament.
+
+    if len(participants) == 0:
+        raise HTTPException(400, "Nothing to import — everyone was skipped.")
+
+    update_tournament(
+        tournament_id,
+        "SET participants = :p, #st = :s, #f = :f",
+        {":p": participants, ":s": "active", ":f": fmt},
+        expr_names={"#st": "status", "#f": "format"},
+    )
+    return HTMLResponse("", status_code=200, headers={"HX-Redirect": f"/tournaments/{tournament_id}"})
 
 
 @app.post("/tournaments/{tournament_id}/rounds", response_class=HTMLResponse)

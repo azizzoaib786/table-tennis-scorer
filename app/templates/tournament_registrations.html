@@ -1,0 +1,202 @@
+{% extends "base_page.html" if false else "tournament.html" ignore missing %}
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1"/>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/htmx.org@1.9.12"></script>
+    <title>Registrations — {{ tournament.name }}</title>
+    <link rel="manifest" href="/static/manifest.json" />
+    <meta name="theme-color" content="#059669" />
+  </head>
+  <body class="bg-gradient-to-br from-emerald-100 via-teal-100 to-sky-100 min-h-screen">
+    <div class="max-w-5xl mx-auto p-3 sm:p-4">
+      <div class="bg-white rounded-2xl border-2 border-emerald-200 shadow-xl p-4 sm:p-5">
+        <div class="flex items-center justify-between flex-wrap gap-2 mb-4">
+          <div>
+            <h1 class="text-2xl font-bold text-emerald-900">🎫 Registrations</h1>
+            <p class="text-emerald-700 text-sm font-medium">{{ tournament.name }} — {{ registrations|length }} total</p>
+          </div>
+          <div class="flex gap-2 flex-wrap">
+            <a href="/tournaments/{{ tournament.tournament_id }}" class="px-3 py-2 rounded-lg bg-slate-200 hover:bg-slate-300 text-slate-800 text-sm font-bold">← Tournament</a>
+            <a href="/tournaments/{{ tournament.tournament_id }}/register" target="_blank" class="px-3 py-2 rounded-lg bg-emerald-100 hover:bg-emerald-200 text-emerald-800 text-sm font-bold">🔗 Public register link</a>
+            <a href="/tournaments/{{ tournament.tournament_id }}/register?admin=1" target="_blank" class="px-3 py-2 rounded-lg bg-amber-500 hover:bg-amber-600 text-white text-sm font-bold shadow-md">➕ Manual add</a>
+            <a href="/tournaments/{{ tournament.tournament_id }}/registrations/export.html" target="_blank" class="px-3 py-2 rounded-lg bg-sky-600 text-white text-sm font-bold shadow-md">🖨️ HTML</a>
+            <a href="/tournaments/{{ tournament.tournament_id }}/registrations/export.xlsx" class="px-3 py-2 rounded-lg bg-emerald-700 text-white text-sm font-bold shadow-md">⬇️ Excel</a>
+          </div>
+        </div>
+
+        <details class="mb-4 rounded-2xl border-2 border-sky-200 bg-sky-50/60 p-3">
+          <summary class="cursor-pointer text-sky-900 font-bold text-sm flex items-center gap-2">
+            ⚙️ Registration settings
+            <span class="text-xs font-normal text-sky-700">
+              {{ (tournament.format or 'doubles')|title }}
+              {% if tournament.registration_start or tournament.registration_end %}
+                • {{ tournament.registration_start[:16].replace('T',' ') if tournament.registration_start else 'now' }} → {{ tournament.registration_end[:16].replace('T',' ') if tournament.registration_end else 'no close date' }}
+              {% else %}
+                • always open
+              {% endif %}
+              {% if tournament.status and tournament.status != 'registration' %}
+                • <span class="font-bold text-emerald-700">status: {{ tournament.status }}</span>
+              {% endif %}
+            </span>
+          </summary>
+          <form hx-post="/tournaments/{{ tournament.tournament_id }}/registration-settings"
+                hx-swap="none"
+                class="mt-3 grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div>
+              <label class="text-xs font-bold text-sky-900">Format</label>
+              <select name="format" class="mt-1 w-full rounded-lg border-2 border-sky-200 focus:border-sky-400 px-3 py-2 text-sm">
+                <option value="doubles" {% if (tournament.format or 'doubles') == 'doubles' %}selected{% endif %}>👥 Doubles</option>
+                <option value="singles" {% if tournament.format == 'singles' %}selected{% endif %}>🏓 Singles</option>
+              </select>
+            </div>
+            <div>
+              <label class="text-xs font-bold text-sky-900">Registration opens</label>
+              <input type="datetime-local" name="registration_start"
+                     value="{{ tournament.registration_start[:16] if tournament.registration_start else '' }}"
+                     class="mt-1 w-full rounded-lg border-2 border-sky-200 focus:border-sky-400 px-3 py-2 text-sm"/>
+            </div>
+            <div>
+              <label class="text-xs font-bold text-sky-900">Registration closes</label>
+              <input type="datetime-local" name="registration_end"
+                     value="{{ tournament.registration_end[:16] if tournament.registration_end else '' }}"
+                     class="mt-1 w-full rounded-lg border-2 border-sky-200 focus:border-sky-400 px-3 py-2 text-sm"/>
+            </div>
+            <div class="sm:col-span-3 flex justify-end">
+              <button class="px-4 py-2 rounded-lg bg-sky-600 text-white text-sm font-bold shadow-md">💾 Save settings</button>
+            </div>
+          </form>
+          <p class="text-xs text-sky-700 mt-2">Leave both dates blank to keep the form always open. Once you finalise payments, use <strong>Build participants</strong> to move the tournament into play.</p>
+        </details>
+
+        {% set paid_count = registrations | selectattr('payment_done') | list | length %}
+        {% set unpaid_count = registrations | rejectattr('payment_done') | list | length %}
+        <div class="mb-4 grid grid-cols-1 sm:grid-cols-3 gap-2 text-center">
+          <div class="rounded-xl bg-emerald-50 border-2 border-emerald-200 p-2">
+            <div class="text-xs text-emerald-700 font-bold uppercase">Paid</div>
+            <div class="text-2xl font-black text-emerald-800">{{ paid_count }}</div>
+          </div>
+          <div class="rounded-xl bg-amber-50 border-2 border-amber-200 p-2">
+            <div class="text-xs text-amber-700 font-bold uppercase">Unpaid</div>
+            <div class="text-2xl font-black text-amber-800">{{ unpaid_count }}</div>
+          </div>
+          <div class="rounded-xl bg-slate-50 border-2 border-slate-200 p-2">
+            <div class="text-xs text-slate-600 font-bold uppercase">Status</div>
+            <div class="text-sm font-bold text-slate-800 mt-1">{{ (tournament.status or 'registration')|title }}</div>
+          </div>
+        </div>
+
+        {% if (tournament.status or 'registration') == 'registration' %}
+        <div class="mb-4 rounded-2xl border-2 border-indigo-200 bg-indigo-50 p-3 flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <p class="font-bold text-indigo-900 text-sm">🏆 Ready to start the tournament?</p>
+            <p class="text-xs text-indigo-700">You pick the play format on the next step (singles or doubles) and pair up any lone singles before we build the participant list.</p>
+          </div>
+          <a href="/tournaments/{{ tournament.tournament_id }}/build-participants"
+             class="px-4 py-2 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 text-white font-bold text-sm shadow-md">
+            🏆 Build participants →
+          </a>
+        </div>
+        {% endif %}
+
+        {% if registrations %}
+        <div class="overflow-x-auto">
+          <table class="w-full text-sm">
+            <thead class="text-xs uppercase text-emerald-800 border-b-2 border-emerald-200">
+              <tr>
+                <th class="text-left py-2 pr-3">Photo</th>
+                <th class="text-left py-2 pr-3">Name</th>
+                <th class="text-left py-2 pr-3">Email</th>
+                <th class="text-left py-2 pr-3">Phone</th>
+                <th class="text-left py-2 pr-3">ITS</th>
+                <th class="text-left py-2 pr-3">Age</th>
+                <th class="text-left py-2 pr-3">Level</th>
+                <th class="text-left py-2 pr-3">Format</th>
+                <th class="text-left py-2 pr-3">Paid</th>
+                <th class="text-right py-2 pl-3">Actions</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-emerald-100">
+            {% for r in registrations %}
+              <tr>
+                <td class="py-2 pr-3">
+                  {% if r.photo_key %}
+                    {% set url = photo_url(r.photo_key) %}
+                    {% if url %}
+                    <img src="{{ url }}" alt="{{ r.name }}" class="w-10 h-10 rounded-full object-cover border-2 border-emerald-200"/>
+                    {% else %}
+                    <div class="w-10 h-10 rounded-full bg-emerald-100 border-2 border-emerald-200 flex items-center justify-center text-emerald-800 font-bold">{{ r.name[:1]|upper }}</div>
+                    {% endif %}
+                  {% else %}
+                    <div class="w-10 h-10 rounded-full bg-emerald-100 border-2 border-emerald-200 flex items-center justify-center text-emerald-800 font-bold">{{ r.name[:1]|upper }}</div>
+                  {% endif %}
+                </td>
+                <td class="py-2 pr-3 font-semibold text-slate-800">
+                  {{ r.name }}
+                  {% if r.match_type == 'doubles' and r.partner_name %}
+                    <span class="block text-[10px] font-normal text-teal-700">👥 with {{ r.partner_name }}</span>
+                    {% if r.team_name %}
+                    <span class="block text-[10px] font-bold text-indigo-700">🏷️ Team: {{ r.team_name }}</span>
+                    {% endif %}
+                  {% endif %}
+                </td>
+                <td class="py-2 pr-3 text-slate-600">{{ r.email }}</td>
+                <td class="py-2 pr-3 text-slate-600">{{ r.phone }}</td>
+                <td class="py-2 pr-3 text-slate-600">{{ r.its }}</td>
+                <td class="py-2 pr-3 text-slate-600">{{ r.age or '' }}</td>
+                <td class="py-2 pr-3">
+                  {% set lvl = (r.experience or 'beginner')|lower %}
+                  <span class="text-xs px-2 py-0.5 rounded-full font-bold
+                    {% if lvl == 'expert' %}bg-rose-100 text-rose-700 border border-rose-200
+                    {% elif lvl == 'amateur' %}bg-amber-100 text-amber-700 border border-amber-200
+                    {% else %}bg-emerald-100 text-emerald-700 border border-emerald-200{% endif %}">
+                    {{ lvl|title }}
+                  </span>
+                </td>
+                <td class="py-2 pr-3">
+                  {% if r.match_type == 'doubles' %}
+                    <span class="text-xs px-2 py-0.5 rounded-full font-bold bg-teal-100 text-teal-700 border border-teal-200">👥 Doubles</span>
+                  {% else %}
+                    <span class="text-xs px-2 py-0.5 rounded-full font-bold bg-sky-100 text-sky-700 border border-sky-200">🏓 Singles</span>
+                  {% endif %}
+                </td>
+                <td class="py-2 pr-3">
+                  <form hx-post="/registrations/{{ r.registration_id }}/toggle-paid" hx-swap="none" class="inline">
+                    <button class="text-xs px-3 py-1 rounded-full font-bold border
+                      {% if r.payment_done %}bg-emerald-500 text-white border-emerald-600{% else %}bg-slate-100 text-slate-700 border-slate-300{% endif %}">
+                      {% if r.payment_done %}✅ Paid{% else %}◻ Unpaid{% endif %}
+                    </button>
+                  </form>
+                </td>
+                <td class="py-2 pl-3 text-right">
+                  <form hx-post="/registrations/{{ r.registration_id }}/delete" hx-swap="none"
+                        hx-confirm="Remove registration for {{ r.name }}?" class="inline">
+                    <button class="text-xs px-3 py-1 rounded-lg bg-rose-500 hover:bg-rose-600 text-white font-bold shadow-md">🗑️</button>
+                  </form>
+                </td>
+              </tr>
+            {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        {% else %}
+        <div class="text-center py-10">
+          <div class="text-4xl mb-2">🎫</div>
+          <p class="text-emerald-800 font-semibold">No registrations yet.</p>
+          <p class="text-emerald-600 text-sm mt-1">
+            Share the public link:
+            <code class="text-xs bg-emerald-50 border border-emerald-200 rounded px-2 py-1">/tournaments/{{ tournament.tournament_id }}/register</code>
+          </p>
+        </div>
+        {% endif %}
+      </div>
+
+      <div class="mt-4 text-center pb-4">
+        <p class="text-sm text-emerald-700 font-medium">🏓 <span class="font-bold bg-gradient-to-r from-emerald-600 to-teal-600 bg-clip-text text-transparent">Table Tennis Scorer</span></p>
+        <p class="text-xs text-emerald-600 mt-1">Created with ❤️ by <a href="https://azizzoaib.com" target="_blank" rel="noopener" class="font-semibold hover:underline">Aziz Zoaib</a></p>
+      </div>
+    </div>
+  </body>
+</html>

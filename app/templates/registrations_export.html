@@ -1,0 +1,65 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1"/>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <title>{{ tournament.name }} — Registrations</title>
+    <style>
+      @media print {
+        .no-print { display: none !important; }
+        body { background: white; }
+      }
+    </style>
+  </head>
+  <body class="bg-white min-h-screen p-6 text-slate-900">
+    <div class="max-w-5xl mx-auto">
+      <div class="flex items-center justify-between mb-4 flex-wrap gap-2">
+        <div>
+          <h1 class="text-2xl font-bold">🏓 {{ tournament.name }} — Registrations</h1>
+          <p class="text-sm text-slate-600">{{ registrations|length }} registered players</p>
+        </div>
+        <button onclick="window.print()" class="no-print px-4 py-2 rounded-lg bg-slate-800 text-white text-sm font-bold">🖨️ Print</button>
+      </div>
+
+      <table class="w-full text-sm border-collapse">
+        <thead>
+          <tr class="bg-slate-100 border-b-2 border-slate-300">
+            <th class="text-left py-2 px-3">#</th>
+            <th class="text-left py-2 px-3">Name</th>
+            <th class="text-left py-2 px-3">Email</th>
+            <th class="text-left py-2 px-3">Phone</th>
+            <th class="text-left py-2 px-3">ITS</th>
+            <th class="text-left py-2 px-3">Age</th>
+            <th class="text-left py-2 px-3">Level</th>
+            <th class="text-left py-2 px-3">Format</th>
+            <th class="text-left py-2 px-3">Team</th>
+            <th class="text-left py-2 px-3">Partner</th>
+            <th class="text-left py-2 px-3">Payment</th>
+            <th class="text-left py-2 px-3">Registered</th>
+          </tr>
+        </thead>
+        <tbody>
+        {% for r in registrations %}
+          <tr class="border-b border-slate-200">
+            <td class="py-2 px-3">{{ loop.index }}</td>
+            <td class="py-2 px-3 font-semibold">{{ r.name }}</td>
+            <td class="py-2 px-3">{{ r.email }}</td>
+            <td class="py-2 px-3">{{ r.phone }}</td>
+            <td class="py-2 px-3">{{ r.its }}</td>
+            <td class="py-2 px-3">{{ r.age or '' }}</td>
+            <td class="py-2 px-3">{{ (r.experience or 'beginner')|title }}</td>
+            <td class="py-2 px-3">{{ (r.match_type or 'singles')|title }}</td>
+            <td class="py-2 px-3">{% if r.match_type == 'doubles' %}{{ r.team_name or '' }}{% endif %}</td>
+            <td class="py-2 px-3">{% if r.match_type == 'doubles' %}{{ r.partner_name }}{% endif %}</td>
+            <td class="py-2 px-3">{% if r.payment_done %}✅ Paid{% else %}◻ Unpaid{% endif %}</td>
+            <td class="py-2 px-3 text-xs text-slate-600">{{ r.created_at[:19].replace('T', ' ') if r.created_at else '' }}</td>
+          </tr>
+        {% else %}
+          <tr><td colspan="12" class="py-6 text-center text-slate-500">No registrations yet.</td></tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </body>
+</html>
