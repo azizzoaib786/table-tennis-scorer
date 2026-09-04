@@ -21,6 +21,7 @@ from .db import (
     set_user_role, search_users, update_user_stats, set_user_must_change_password,
     set_user_admin,
     put_tournament, get_tournament, list_tournaments, list_tournaments_by_user,
+    list_tournaments_for_scorer,
     update_tournament, delete_tournament,
     get_settings, update_settings,
     add_roster_player, list_roster, delete_roster_player, get_roster_player,
@@ -254,20 +255,39 @@ def must_tournament(tournament_id: str) -> Dict[str, Any]:
     return t
 
 
+def _tournament_grants_scorer(t: Dict[str, Any], user: Dict[str, Any]) -> bool:
+    """True if the user is listed as a scorer on the tournament."""
+    if not t or not user:
+        return False
+    return user.get("user_id", "") in (t.get("scorer_ids") or [])
+
+
 def check_match_access(request: Request, match_id: str):
     user = require_auth(request)
     match = must_match(match_id)
-    if not user.get("is_admin") and match.get("user_id") != user["user_id"]:
-        raise HTTPException(status_code=403, detail="Access denied")
-    return user, match
+    if user.get("is_admin"):
+        return user, match
+    if match.get("user_id") == user["user_id"]:
+        return user, match
+    # Scorers assigned to the parent tournament may score its matches.
+    tid = match.get("tournament_id") or ""
+    if tid:
+        t = get_tournament(tid)
+        if t and _tournament_grants_scorer(t, user):
+            return user, match
+    raise HTTPException(status_code=403, detail="Access denied")
 
 
 def check_tournament_access(request: Request, tournament_id: str):
     user = require_auth(request)
     t = must_tournament(tournament_id)
-    if not user.get("is_admin") and t.get("user_id") != user["user_id"]:
-        raise HTTPException(status_code=403, detail="Access denied")
-    return user, t
+    if user.get("is_admin"):
+        return user, t
+    if t.get("user_id") == user["user_id"]:
+        return user, t
+    if _tournament_grants_scorer(t, user):
+        return user, t
+    raise HTTPException(status_code=403, detail="Access denied")
 
 
 def match_context(request: Request, match: Dict[str, Any], user: Optional[Dict[str, Any]] = None,
@@ -339,7 +359,19 @@ def home(request: Request):
         recent_tournaments = list_tournaments(limit=20)
     else:
         recent_matches = list_matches_by_user(user["user_id"], limit=50)
-        recent_tournaments = list_tournaments_by_user(user["user_id"], limit=20)
+        # Scorers see tournaments they created AND ones admins assigned them to.
+        recent_tournaments = list_tournaments_for_scorer(user["user_id"], limit=20)
+
+    # Only admins get the scorer picker on the create form.
+    all_scorers = []
+    if user.get("is_admin"):
+        all_scorers = [
+            {"user_id": u["user_id"], "username": u.get("username", "")}
+            for u in list_all_users()
+            if u.get("is_active") and not u.get("is_admin")
+            and (u.get("role") or "scorer") != "player"
+        ]
+        all_scorers.sort(key=lambda u: u["username"].lower())
 
     return templates.TemplateResponse("home.html", {
         "request": request,
@@ -347,6 +379,7 @@ def home(request: Request):
         "recent_matches": recent_matches,
         "recent_tournaments": recent_tournaments,
         "settings": get_settings(),
+        "all_scorers": all_scorers,
     })
 
 
@@ -1042,7 +1075,7 @@ def delete_own_match(request: Request, match_id: str):
 
 # ── Tournaments ───────────────────────────────────────────────────────────────
 @app.post("/tournaments")
-def create_tournament(request: Request,
+async def create_tournament(request: Request,
                       name: str = Form(...),
                       best_of: int = Form(0),
                       points_to_win: int = Form(0),
@@ -1052,7 +1085,12 @@ def create_tournament(request: Request,
                       format: str = Form("doubles"),
                       registration_start: str = Form(""),
                       registration_end: str = Form("")):
-    user = require_scorer(request)
+    # Only admins can create tournaments.
+    user = require_admin(request)
+    form = await request.form()
+    # Multi-select "scorer_ids" (0..N values); FastAPI's Form(...) only sees the
+    # last one, so we read them off the raw form.
+    scorer_ids = [v for v in form.getlist("scorer_ids") if v]
     cfg = get_settings()
     tid = uuid.uuid4().hex
 
@@ -1081,6 +1119,7 @@ def create_tournament(request: Request,
         "service_interval": int(service_interval) or int(cfg["service_interval"]),
         "deuce_interval": int(deuce_interval) or int(cfg["deuce_interval"]),
         "user_id": user["user_id"],
+        "scorer_ids": scorer_ids,
         "created_at": now_ts(),
         "participants": [],
         "rounds": seeded_rounds,
@@ -1094,14 +1133,38 @@ def create_tournament(request: Request,
 
 @app.get("/tournaments/{tournament_id}", response_class=HTMLResponse)
 def tournament_page(request: Request, tournament_id: str):
-    user = require_auth(request)
-    t = must_tournament(tournament_id)
-    if not user.get("is_admin") and t.get("user_id") != user["user_id"]:
-        raise HTTPException(403, "Access denied")
+    user, t = check_tournament_access(request, tournament_id)
+    all_scorers = []
+    if user.get("is_admin"):
+        all_scorers = [
+            {"user_id": u["user_id"], "username": u.get("username", "")}
+            for u in list_all_users()
+            if u.get("is_active") and not u.get("is_admin")
+            and (u.get("role") or "scorer") != "player"
+        ]
+        all_scorers.sort(key=lambda u: u["username"].lower())
     return templates.TemplateResponse("tournament.html", {
         "request": request, "user": user, "tournament": t,
         "roster": list_roster(),
+        "all_scorers": all_scorers,
     })
+
+
+@app.post("/tournaments/{tournament_id}/scorers", response_class=HTMLResponse)
+async def update_tournament_scorers(request: Request, tournament_id: str):
+    """Admin-only: replace the tournament's scorer_ids list."""
+    user = require_admin(request)
+    t = must_tournament(tournament_id)
+    if t.get("user_id") != user["user_id"] and not user.get("is_admin"):
+        raise HTTPException(status_code=403, detail="Access denied")
+    form = await request.form()
+    scorer_ids = [v for v in form.getlist("scorer_ids") if v]
+    update_tournament(
+        tournament_id,
+        "SET scorer_ids = :s",
+        {":s": scorer_ids},
+    )
+    return RedirectResponse(f"/tournaments/{tournament_id}", status_code=303)
 
 
 # ── Public tournament registration (players sign up to play) ─────────────────

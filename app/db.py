@@ -257,6 +257,22 @@ def list_tournaments_by_user(user_id: str, limit: int = 50) -> List[Dict[str, An
     return items
 
 
+def list_tournaments_for_scorer(user_id: str, limit: int = 50) -> List[Dict[str, Any]]:
+    """Tournaments visible to a scorer: ones they created OR were assigned to via
+    scorer_ids. Scans and filters in Python (list stays small; no GSI needed)."""
+    resp = tournaments.scan(Limit=limit)
+    items = []
+    for t in resp.get("Items", []):
+        if t.get("user_id") == user_id:
+            items.append(t)
+            continue
+        sids = t.get("scorer_ids") or []
+        if user_id in sids:
+            items.append(t)
+    items.sort(key=lambda x: x.get("created_at", ""), reverse=True)
+    return items
+
+
 def update_tournament(tournament_id: str, update_expr: str, expr_vals: Dict[str, Any],
                       expr_names: Optional[Dict[str, str]] = None) -> None:
     kwargs: Dict[str, Any] = {

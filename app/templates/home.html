@@ -36,7 +36,9 @@
 
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <a href="#new-match" class="block text-center rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white px-4 py-4 font-bold text-lg shadow-lg">🏓 New Match</a>
+          {% if user.is_admin %}
           <a href="#new-tournament" class="block text-center rounded-xl bg-gradient-to-r from-sky-500 to-indigo-600 hover:from-sky-600 hover:to-indigo-700 text-white px-4 py-4 font-bold text-lg shadow-lg">🏆 New Tournament</a>
+          {% endif %}
         </div>
       </div>
 
@@ -132,6 +134,10 @@
       </div>
 
       <div id="new-tournament" class="mt-4 bg-white rounded-3xl shadow-2xl border-2 border-sky-200 p-5">
+        {% if not user.is_admin %}
+        <h2 class="text-lg font-bold text-sky-900 mb-2">🏆 Tournaments</h2>
+        <p class="text-sm text-sky-800">Only admins can create tournaments. When an admin assigns you as a scorer, the tournament will appear in your list below.</p>
+        {% else %}
         <h2 class="text-lg font-bold text-sky-900 mb-3">🏆 New Tournament</h2>
         <form method="post" action="/tournaments" class="space-y-3">
           <input name="name" required placeholder="Summer Cup" class="w-full rounded-xl border-2 border-sky-200 focus:border-sky-400 px-4 py-3"/>
@@ -167,6 +173,22 @@
             </div>
           </div>
           <p class="text-xs text-sky-700 -mt-1">Leave both blank to keep the form always open. You can change these later from the tournament page.</p>
+          <div>
+            <label class="text-sm font-semibold text-sky-900">Assign scorers</label>
+            {% if all_scorers %}
+            <div class="mt-1 max-h-40 overflow-auto rounded-xl border-2 border-sky-200 p-2 space-y-1 bg-sky-50">
+              {% for s in all_scorers %}
+              <label class="flex items-center gap-2 text-sm text-sky-900">
+                <input type="checkbox" name="scorer_ids" value="{{ s.user_id }}" class="accent-sky-600"/>
+                <span>{{ s.username }}</span>
+              </label>
+              {% endfor %}
+            </div>
+            <p class="text-xs text-sky-700 mt-1">Assigned scorers will see this tournament in their list and can score its matches. You can change this later from the tournament page.</p>
+            {% else %}
+            <p class="text-xs text-sky-700 mt-1">No scorer accounts available yet. Approve scorer registrations from <a href="/admin" class="underline font-semibold">Admin</a>, then edit this list from the tournament page.</p>
+            {% endif %}
+          </div>
           <details>
             <summary class="cursor-pointer text-sm font-semibold text-sky-900">🗂️ Rounds (optional)</summary>
             <div class="mt-2 space-y-1">
@@ -178,6 +200,7 @@
           </details>
           <button class="w-full rounded-xl bg-gradient-to-r from-sky-500 to-indigo-600 hover:from-sky-600 hover:to-indigo-700 text-white py-4 text-lg font-bold shadow-lg">🏆 Create Tournament</button>
         </form>
+        {% endif %}
       </div>
 
       {% if recent_matches %}
