@@ -1173,6 +1173,22 @@ async def registration_submit(request: Request, tournament_id: str,
         if not window["is_open"]:
             raise HTTPException(403, window["reason"])
 
+    def _render_error(msg: str, status: int = 400):
+        """Render the register page with a friendly error banner instead of a JSON 4xx.
+        Called for user-facing validation / duplicate failures.
+        """
+        return templates.TemplateResponse(
+            "tournament_register.html",
+            {
+                "request": request,
+                "tournament": t,
+                "is_admin_view": is_manual_add,
+                "window": _registration_window_state(t),
+                "flash_error": msg,
+            },
+            status_code=status,
+        )
+
     name = name.strip()
     email = email.strip().lower()
     phone_v = phone.strip()
@@ -1195,7 +1211,7 @@ async def registration_submit(request: Request, tournament_id: str,
     if photo is None or not (photo.filename or "").strip():
         missing_primary.append("photo")
     if missing_primary:
-        raise HTTPException(400, "Missing required fields: " + ", ".join(missing_primary))
+        return _render_error("Missing required fields: " + ", ".join(missing_primary), 400)
 
     match_type = (match_type or "singles").strip().lower()
     if match_type not in ("singles", "doubles"):
@@ -1226,9 +1242,9 @@ async def registration_submit(request: Request, tournament_id: str,
         if not (team_name or "").strip():
             missing.append("team name")
         if missing:
-            raise HTTPException(400, "Doubles registration missing: " + ", ".join(missing))
+            return _render_error("Doubles registration missing: " + ", ".join(missing), 400)
         if partner_name.lower() == name.lower():
-            raise HTTPException(400, "Partner must be a different person")
+            return _render_error("Partner must be a different person.", 400)
     if partner_experience not in ("beginner", "amateur", "expert"):
         partner_experience = "beginner"
 
@@ -1265,26 +1281,26 @@ async def registration_submit(request: Request, tournament_id: str,
 
     primary_conflict = _who_conflicts(email, its_v, phone_v)
     if primary_conflict:
-        raise HTTPException(
-            409,
+        return _render_error(
             f"{name} is already registered for this tournament ({primary_conflict}). "
             "If you registered as a partner in a doubles pair, please contact the organizer.",
+            409,
         )
     if match_type == "doubles":
         partner_conflict = _who_conflicts(partner_email, partner_its_v, partner_phone_v)
         if partner_conflict:
-            raise HTTPException(
-                409,
+            return _render_error(
                 f"Your partner {partner_name} is already registered for this tournament "
                 f"({partner_conflict}).",
+                409,
             )
         # Also guard within THIS submission: primary and partner must not share any identifier.
         if _norm(email) and _norm(email) == _norm(partner_email):
-            raise HTTPException(400, "Partner email must be different from yours")
+            return _render_error("Partner email must be different from yours.", 400)
         if _norm(its_v) and _norm(its_v) == _norm(partner_its_v):
-            raise HTTPException(400, "Partner ITS must be different from yours")
+            return _render_error("Partner ITS must be different from yours.", 400)
         if _norm_phone(phone_v) and _norm_phone(phone_v) == _norm_phone(partner_phone_v):
-            raise HTTPException(400, "Partner phone must be different from yours")
+            return _render_error("Partner phone must be different from yours.", 400)
 
     pair_id = uuid.uuid4().hex if match_type == "doubles" else ""
 

@@ -23,6 +23,15 @@
         </div>
         {% endif %}
 
+        {% if flash_error %}
+        <div class="mb-4 rounded-2xl border-2 border-rose-300 bg-rose-50 px-4 py-3 text-rose-900 font-semibold text-sm">
+          <div class="flex items-start gap-2">
+            <span class="text-lg">⚠️</span>
+            <div>{{ flash_error }}</div>
+          </div>
+        </div>
+        {% endif %}
+
         {% if flash %}
         <div class="mb-4 rounded-2xl border-2 border-emerald-300 bg-emerald-50 px-4 py-3 text-emerald-900 font-semibold text-sm">
           {{ flash }}
@@ -185,8 +194,9 @@
               if (!sel || sel.value !== 'singles') return; // doubles = submit as-is
               const ok = window.confirm(
                 "You're registering as SINGLES.\n\n" +
-                "If the organizer chooses to run this tournament as DOUBLES, " +
-                "we'll pair you from the singles pool.\n\nContinue?"
+                "If the organizer decides to conduct the tournament in a doubles format, " +
+                "the teams should be paired based on the player data provided to you.\n\n" +
+                "Continue?"
               );
               if (!ok) {
                 ev.preventDefault();
