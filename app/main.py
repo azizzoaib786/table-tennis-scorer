@@ -146,6 +146,75 @@ def _advancing_participants(tournament: dict, round_num: int) -> list:
 templates.env.globals["advancing_participants"] = _advancing_participants
 
 
+def _winning_side_label(match: Dict[str, Any], tournament: Optional[Dict[str, Any]],
+                        winner: str) -> str:
+    """Human label for the winning side of a match.
+    Singles → the winning player's name.
+    Doubles → the team name (from the tournament's participants) if we can
+    resolve it, otherwise "Primary & Partner". Falls back to the primary name
+    if we somehow have no partner info at all."""
+    if winner not in ("A", "B"):
+        return ""
+    if winner == "A":
+        primary = (match.get("player_a") or "").strip()
+        partner = (match.get("player_a2") or "").strip()
+    else:
+        primary = (match.get("player_b") or "").strip()
+        partner = (match.get("player_b2") or "").strip()
+    if (match.get("match_type") or "singles") != "doubles":
+        return primary
+    # Doubles: prefer team_name recorded on either member's participant entry.
+    team = ""
+    if tournament:
+        by_name = {(p.get("name") or "").strip().lower(): p
+                   for p in (tournament.get("participants") or [])}
+        for nm in (primary, partner):
+            if not nm:
+                continue
+            p = by_name.get(nm.lower())
+            if p and p.get("team_name"):
+                team = p["team_name"]
+                break
+    if team:
+        return team
+    if primary and partner:
+        return f"{primary} & {partner}"
+    return primary or partner
+
+
+def _slot_winner_label(tournament: Optional[Dict[str, Any]], slot: Dict[str, Any]) -> str:
+    """Render-time helper for bracket slots. Prefers the tournament team_name
+    (via participants lookup by id) over the stored winner_name so historical
+    matches (built before doubles team labelling) still show a good label."""
+    if not slot:
+        return ""
+    winner = slot.get("winner")
+    if winner not in ("A", "B"):
+        return slot.get("winner_name") or ""
+    participants = {p.get("id"): p for p in (tournament.get("participants") or [])} if tournament else {}
+    if winner == "A":
+        primary_id = slot.get("a_id")
+        partner_id = slot.get("a2_id")
+    else:
+        primary_id = slot.get("b_id")
+        partner_id = slot.get("b2_id")
+    primary = participants.get(primary_id) or {}
+    partner = participants.get(partner_id) or {}
+    if (slot.get("match_type") or "singles") != "doubles":
+        return (primary.get("name") or slot.get("winner_name") or "").strip()
+    team = (primary.get("team_name") or partner.get("team_name") or "").strip()
+    if team:
+        return team
+    pn = (primary.get("name") or "").strip()
+    qn = (partner.get("name") or primary.get("partner_name") or "").strip()
+    if pn and qn:
+        return f"{pn} & {qn}"
+    return pn or slot.get("winner_name") or ""
+
+
+templates.env.globals["winner_slot_label"] = _slot_winner_label
+
+
 @app.get("/sw.js")
 async def service_worker():
     return FileResponse(
@@ -876,30 +945,67 @@ def match_page(request: Request, match_id: str):
 
 @app.get("/live", response_class=HTMLResponse)
 def live_index(request: Request):
-    """Public index of currently-live (in-progress) matches."""
-    all_m = list_matches(limit=200)
-    live_rows = []
-    for m in all_m:
+    """Public rolled-up board: every tournament grouped by round with all
+    matches shown inline (scores + game state). No click-through required."""
+    tournaments_view: List[Dict[str, Any]] = []
+    standalone_live: List[Dict[str, Any]] = []
+    seen_match_ids: set = set()
+
+    for t in list_tournaments(limit=50):
+        rounds_view = _build_rounds_view(t)
+        # Track match ids that belong to a tournament (so the stray-matches
+        # section below doesn't duplicate them).
+        for r in rounds_view:
+            for m in r["matches"]:
+                if m.get("match_id"):
+                    seen_match_ids.add(m["match_id"])
+        has_matches = any(r["matches"] for r in rounds_view)
+        if not has_matches:
+            continue
+        # Only surface tournaments that have at least one live or upcoming match.
+        # (Keep finished ones too — they're informational and small.)
+        tournaments_view.append({
+            "tournament": t,
+            "rounds_view": rounds_view,
+            "live_count": sum(
+                1 for r in rounds_view for m in r["matches"] if m["status"] == "live"
+            ),
+        })
+
+    # Ad-hoc (non-tournament) live matches — keep the previous flat behaviour
+    # so casual scoreboards still show up here.
+    for m in list_matches(limit=200):
+        if m.get("tournament_id"):
+            continue
+        if m["match_id"] in seen_match_ids:
+            continue
         ev = list_events(m["match_id"])
         st = compute_state(m, ev)
         if st.get("match_winner"):
-            continue  # skip completed
-        live_rows.append({
+            continue
+        standalone_live.append({
             "match_id": m["match_id"],
             "name": m.get("name", "Match"),
             "player_a": m.get("player_a", "A"),
             "player_b": m.get("player_b", "B"),
-            "score_a": st.get("current_game_a", 0),
-            "score_b": st.get("current_game_b", 0),
-            "games_a": st.get("games_a", 0),
-            "games_b": st.get("games_b", 0),
+            "a_score": st.get("a_score", 0),
+            "b_score": st.get("b_score", 0),
+            "a_games": st.get("a_games", 0),
+            "b_games": st.get("b_games", 0),
             "current_game_num": st.get("current_game_num", 1),
             "best_of": m.get("best_of", 5),
-            "is_doubles": st.get("is_doubles", False),
+            "is_doubles": (m.get("match_type") == "doubles"),
         })
-    live_rows.sort(key=lambda r: r["name"].lower())
+    standalone_live.sort(key=lambda r: r["name"].lower())
+
+    # Most-recently-created tournament first.
+    tournaments_view.sort(
+        key=lambda tv: tv["tournament"].get("created_at", ""), reverse=True,
+    )
     return templates.TemplateResponse("live_index.html", {
-        "request": request, "matches": live_rows,
+        "request": request,
+        "tournaments_view": tournaments_view,
+        "standalone_live": standalone_live,
     })
 
 
@@ -944,7 +1050,7 @@ def _finalize_stats_if_needed(match: dict, state: dict) -> None:
                     for slot in r.get("matches", []):
                         if slot.get("match_id") == match["match_id"]:
                             slot["winner"] = state["match_winner"]
-                            slot["winner_name"] = match["player_a"] if state["match_winner"] == "A" else match["player_b"]
+                            slot["winner_name"] = _winning_side_label(match, t, state["match_winner"])
                             break
             update_tournament(tid, "SET rounds = :r", {":r": rounds})
 
@@ -2160,28 +2266,27 @@ def start_pair_match(request: Request, tournament_id: str, round_num: int, slot:
 
 
 # ── Public tournament dashboard ───────────────────────────────────────────────
-@app.get("/live/tournaments/{tournament_id}", response_class=HTMLResponse)
-def live_tournament(request: Request, tournament_id: str):
-    """Public read-only board that shows every match in a tournament with its
-    current live score. Click a match to open its live scoreboard.
-    No auth required — anyone with the link can watch."""
-    t = get_tournament(tournament_id)
-    if not t:
-        raise HTTPException(404, "Tournament not found")
-
-    rounds_view = []
-    for r in t.get("rounds", []):
-        matches_view = []
-        for pair in r.get("matches", []):
+def _build_rounds_view(t: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """Compute the read-only rounds/matches view used by the public live boards.
+    One row per bracket slot with names + live score/game state resolved."""
+    rounds_view: List[Dict[str, Any]] = []
+    for r in t.get("rounds", []) or []:
+        matches_view: List[Dict[str, Any]] = []
+        for pair in r.get("matches", []) or []:
             mid = pair.get("match_id") or ""
             row = {
                 "slot": int(pair.get("slot", 0)),
                 "match_type": pair.get("match_type", "singles"),
+                "a_id": pair.get("a_id", ""),
+                "b_id": pair.get("b_id", ""),
+                "a2_id": pair.get("a2_id", ""),
+                "b2_id": pair.get("b2_id", ""),
                 "a_name": pair.get("a_name", ""),
                 "b_name": pair.get("b_name", ""),
                 "a2_name": pair.get("a2_name", ""),
                 "b2_name": pair.get("b2_name", ""),
                 "match_id": mid,
+                "winner": pair.get("winner", ""),
                 "winner_name": pair.get("winner_name", ""),
                 "status": "pending",
                 "a_score": 0, "b_score": 0,
@@ -2191,10 +2296,10 @@ def live_tournament(request: Request, tournament_id: str):
                 "is_deciding_game": False,
             }
             if mid:
-                match = get_match(mid)
-                if match:
+                m = get_match(mid)
+                if m:
                     ev = list_events(mid)
-                    st = compute_state(match, ev)
+                    st = compute_state(m, ev)
                     row["a_score"] = st.get("a_score", 0)
                     row["b_score"] = st.get("b_score", 0)
                     row["a_games"] = st.get("a_games", 0)
@@ -2202,19 +2307,25 @@ def live_tournament(request: Request, tournament_id: str):
                     row["current_game_num"] = st.get("current_game_num", 1)
                     row["is_deuce"] = bool(st.get("is_deuce"))
                     row["is_deciding_game"] = bool(st.get("is_deciding_game"))
-                    if st.get("match_winner"):
-                        row["status"] = "finished"
-                    else:
-                        row["status"] = "live"
+                    row["status"] = "finished" if st.get("match_winner") else "live"
             matches_view.append(row)
         rounds_view.append({
             "round_num": int(r.get("round_num", 0)),
             "name": r.get("name", ""),
             "matches": matches_view,
         })
+    return rounds_view
 
+
+@app.get("/live/tournaments/{tournament_id}", response_class=HTMLResponse)
+def live_tournament(request: Request, tournament_id: str):
+    """Public read-only board for a single tournament — every round + every
+    match's live score inline. No auth required."""
+    t = get_tournament(tournament_id)
+    if not t:
+        raise HTTPException(404, "Tournament not found")
     return templates.TemplateResponse("live_tournament.html", {
         "request": request,
         "tournament": t,
-        "rounds_view": rounds_view,
+        "rounds_view": _build_rounds_view(t),
     })

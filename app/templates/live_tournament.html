@@ -51,7 +51,7 @@
           {% if m.status == 'finished' %}{% set status_cls = 'border-amber-300 bg-amber-50' %}{% endif %}
 
           {% if m.match_id %}
-          <a href="/live/{{ m.match_id }}" class="block rounded-xl border-2 {{ status_cls }} p-3 hover:shadow-md transition-all">
+          <div class="rounded-xl border-2 {{ status_cls }} p-3">
           {% else %}
           <div class="rounded-xl border-2 {{ status_cls }} p-3 opacity-70">
           {% endif %}
@@ -79,7 +79,7 @@
                   {% endif %}
                 </div>
                 {% if m.winner_name %}
-                  <div class="text-xs text-amber-800 font-bold mt-0.5">🏆 {{ m.winner_name }}</div>
+                  <div class="text-xs text-amber-800 font-bold mt-0.5">🏆 {{ winner_slot_label(tournament, m) or m.winner_name }}</div>
                 {% endif %}
               </div>
 
@@ -91,16 +91,13 @@
                 <div class="text-[11px] text-emerald-700 font-bold mt-1">
                   Games: {{ m.a_games }}–{{ m.b_games }} • Game {{ m.current_game_num }}
                 </div>
+                <a href="/live/{{ m.match_id }}" class="inline-block mt-1 text-[11px] text-emerald-700 hover:underline font-semibold">🔎 Open scoreboard</a>
               </div>
               {% else %}
               <div class="text-right shrink-0 text-xs text-slate-500 font-bold">not started</div>
               {% endif %}
             </div>
-          {% if m.match_id %}
-          </a>
-          {% else %}
           </div>
-          {% endif %}
           {% endfor %}
         </div>
       </div>

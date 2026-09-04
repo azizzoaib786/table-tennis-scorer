@@ -243,7 +243,7 @@
                 {% endif %}
               </div>
             </div>
-            {% if m.winner %}<div class="text-xs text-amber-700 font-bold mt-0.5">🏆 Winner: {{ m.winner_name }}</div>{% endif %}
+            {% if m.winner %}<div class="text-xs text-amber-700 font-bold mt-0.5">🏆 Winner: {{ winner_slot_label(tournament, m) or m.winner_name }}</div>{% endif %}
           </div>
           <div class="flex gap-2 flex-wrap">
             {% if m.match_id %}
