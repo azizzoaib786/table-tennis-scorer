@@ -1234,6 +1234,58 @@ async def registration_submit(request: Request, tournament_id: str,
 
     team_name = (team_name or "").strip()
 
+    # ── Duplicate check: no player may register twice in the same tournament.
+    # We compare on any of {email, ITS, phone} (normalized). This catches both:
+    #   • someone who already registered as singles trying to re-register
+    #   • someone who was added as a partner in a doubles pair
+    existing_regs = list_registrations_by_tournament(tournament_id)
+
+    def _norm(s: str) -> str:
+        return (s or "").strip().lower()
+
+    def _norm_phone(s: str) -> str:
+        # phones may include spaces / dashes / plus — compare digits only
+        return "".join(ch for ch in (s or "") if ch.isdigit())
+
+    taken_emails = {_norm(r.get("email", "")) for r in existing_regs if r.get("email")}
+    taken_its = {_norm(r.get("its", "")) for r in existing_regs if r.get("its")}
+    taken_phones = {_norm_phone(r.get("phone", "")) for r in existing_regs if r.get("phone")}
+
+    def _who_conflicts(reg_email: str, reg_its: str, reg_phone: str) -> str:
+        e = _norm(reg_email)
+        i = _norm(reg_its)
+        p = _norm_phone(reg_phone)
+        if e and e in taken_emails:
+            return f"email {reg_email}"
+        if i and i in taken_its:
+            return f"ITS {reg_its}"
+        if p and p in taken_phones:
+            return f"phone {reg_phone}"
+        return ""
+
+    primary_conflict = _who_conflicts(email, its_v, phone_v)
+    if primary_conflict:
+        raise HTTPException(
+            409,
+            f"{name} is already registered for this tournament ({primary_conflict}). "
+            "If you registered as a partner in a doubles pair, please contact the organizer.",
+        )
+    if match_type == "doubles":
+        partner_conflict = _who_conflicts(partner_email, partner_its_v, partner_phone_v)
+        if partner_conflict:
+            raise HTTPException(
+                409,
+                f"Your partner {partner_name} is already registered for this tournament "
+                f"({partner_conflict}).",
+            )
+        # Also guard within THIS submission: primary and partner must not share any identifier.
+        if _norm(email) and _norm(email) == _norm(partner_email):
+            raise HTTPException(400, "Partner email must be different from yours")
+        if _norm(its_v) and _norm(its_v) == _norm(partner_its_v):
+            raise HTTPException(400, "Partner ITS must be different from yours")
+        if _norm_phone(phone_v) and _norm_phone(phone_v) == _norm_phone(partner_phone_v):
+            raise HTTPException(400, "Partner phone must be different from yours")
+
     pair_id = uuid.uuid4().hex if match_type == "doubles" else ""
 
     # Primary registration
