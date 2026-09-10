@@ -1,5 +1,5 @@
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from typing import Any, Dict, List, Optional
 import io
 import os
@@ -1190,7 +1190,8 @@ async def create_tournament(request: Request,
                       rounds_seed: str = Form(""),
                       format: str = Form("doubles"),
                       registration_start: str = Form(""),
-                      registration_end: str = Form("")):
+                      registration_end: str = Form(""),
+                      registration_tz_offset: str = Form("")):
     # Only admins can create tournaments.
     user = require_admin(request)
     form = await request.form()
@@ -1217,6 +1218,11 @@ async def create_tournament(request: Request,
                 "matches": [],
             })
 
+    try:
+        tz_off_int = int(registration_tz_offset) if registration_tz_offset.strip() else 0
+    except ValueError:
+        tz_off_int = 0
+
     put_tournament({
         "tournament_id": tid,
         "name": name.strip(),
@@ -1232,6 +1238,7 @@ async def create_tournament(request: Request,
         "format": fmt,
         "registration_start": registration_start.strip(),
         "registration_end": registration_end.strip(),
+        "registration_tz_offset": tz_off_int,
         "status": "registration",
     })
     return RedirectResponse(f"/tournaments/{tid}", status_code=303)
@@ -1275,19 +1282,45 @@ async def update_tournament_scorers(request: Request, tournament_id: str):
 
 # ── Public tournament registration (players sign up to play) ─────────────────
 def _registration_window_state(t: Dict[str, Any]) -> Dict[str, Any]:
-    """Return {is_open, reason} based on tournament registration window + status."""
+    """Return {is_open, reason} based on tournament registration window + status.
+
+    `registration_start` / `registration_end` are naive local-time strings from
+    an <input type="datetime-local"> ('YYYY-MM-DDTHH:MM'). To compare them
+    fairly against real UTC "now" we need the admin's timezone offset (captured
+    on submit via JS: `new Date().getTimezoneOffset()` — minutes WEST of UTC).
+    Legacy tournaments without an offset fall back to offset=0 (i.e. we treat
+    the stored strings as UTC), which matches the old broken behaviour rather
+    than silently changing the state on existing tournaments.
+    """
     status = (t.get("status") or "registration").lower()
     if status != "registration":
         return {"is_open": False, "reason": "Registration is closed — the tournament has already started."}
     start_s = (t.get("registration_start") or "").strip()
     end_s = (t.get("registration_end") or "").strip()
-    now = now_ts()  # ISO-8601 in UTC
-    # datetime-local inputs are naive local time; we compare as strings which
-    # is not perfectly accurate across timezones but is fine for open/close gating.
-    if start_s and now < start_s:
-        return {"is_open": False, "reason": f"Registration opens on {start_s.replace('T', ' ')[:16]}."}
-    if end_s and now > end_s:
-        return {"is_open": False, "reason": f"Registration closed on {end_s.replace('T', ' ')[:16]}."}
+    try:
+        tz_off = int(t.get("registration_tz_offset")) if t.get("registration_tz_offset") not in (None, "") else 0
+    except (TypeError, ValueError):
+        tz_off = 0
+
+    def _local_to_utc(s: str):
+        # datetime-local format: 'YYYY-MM-DDTHH:MM' (seconds optional). Strip 'Z'
+        # if a caller ever passed one — datetime.fromisoformat rejects the suffix.
+        try:
+            dt = datetime.fromisoformat(s.rstrip("Z"))
+        except ValueError:
+            return None
+        # getTimezoneOffset() returns minutes WEST of UTC → UTC = local + offset.
+        return (dt + timedelta(minutes=tz_off)).replace(tzinfo=timezone.utc)
+
+    now_utc = datetime.now(timezone.utc)
+    if start_s:
+        start_utc = _local_to_utc(start_s)
+        if start_utc and now_utc < start_utc:
+            return {"is_open": False, "reason": f"Registration opens on {start_s.replace('T', ' ')[:16]}."}
+    if end_s:
+        end_utc = _local_to_utc(end_s)
+        if end_utc and now_utc > end_utc:
+            return {"is_open": False, "reason": f"Registration closed on {end_s.replace('T', ' ')[:16]}."}
     return {"is_open": True, "reason": ""}
 
 
@@ -1800,15 +1833,20 @@ def rename_tournament(request: Request, tournament_id: str, name: str = Form(...
 def update_registration_settings(request: Request, tournament_id: str,
                                  format: str = Form("doubles"),
                                  registration_start: str = Form(""),
-                                 registration_end: str = Form("")):
+                                 registration_end: str = Form(""),
+                                 registration_tz_offset: str = Form("")):
     user, t = check_tournament_access(request, tournament_id)
     fmt = (format or "doubles").strip().lower()
     if fmt not in ("singles", "doubles"):
         raise HTTPException(400, "format must be 'singles' or 'doubles'")
+    try:
+        tz_off_int = int(registration_tz_offset) if registration_tz_offset.strip() else 0
+    except ValueError:
+        tz_off_int = 0
     update_tournament(
         tournament_id,
-        "SET #f = :f, registration_start = :rs, registration_end = :re",
-        {":f": fmt, ":rs": registration_start.strip(), ":re": registration_end.strip()},
+        "SET #f = :f, registration_start = :rs, registration_end = :re, registration_tz_offset = :tz",
+        {":f": fmt, ":rs": registration_start.strip(), ":re": registration_end.strip(), ":tz": tz_off_int},
         expr_names={"#f": "format"},
     )
     return HTMLResponse("", status_code=200, headers={"HX-Refresh": "true"})

@@ -172,6 +172,11 @@
               <input name="registration_end" type="datetime-local" class="mt-1 w-full rounded-xl border-2 border-sky-200 focus:border-sky-400 px-3 py-3"/>
             </div>
           </div>
+          {# Captures the admin's browser timezone offset (minutes WEST of UTC) so
+             the server can compare the naive datetime-local values above against
+             real UTC "now" without opening/closing at UTC boundaries by mistake. #}
+          <input type="hidden" name="registration_tz_offset" id="reg_tz_offset_create"/>
+          <script>document.getElementById('reg_tz_offset_create').value = String(new Date().getTimezoneOffset());</script>
           <p class="text-xs text-sky-700 -mt-1">Leave both blank to keep the form always open. You can change these later from the tournament page.</p>
           <div>
             <label class="text-sm font-semibold text-sky-900">Assign scorers</label>

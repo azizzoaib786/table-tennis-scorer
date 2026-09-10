@@ -63,6 +63,9 @@
                      value="{{ tournament.registration_end[:16] if tournament.registration_end else '' }}"
                      class="mt-1 w-full rounded-lg border-2 border-sky-200 focus:border-sky-400 px-3 py-2 text-sm"/>
             </div>
+            {# Browser timezone offset — see home.html for rationale. #}
+            <input type="hidden" name="registration_tz_offset" id="reg_tz_offset_edit"/>
+            <script>document.getElementById('reg_tz_offset_edit').value = String(new Date().getTimezoneOffset());</script>
             <div class="sm:col-span-3 flex justify-end">
               <button class="px-4 py-2 rounded-lg bg-sky-600 text-white text-sm font-bold shadow-md">💾 Save settings</button>
             </div>
