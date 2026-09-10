@@ -101,9 +101,23 @@
           </a>
         </div>
         {% else %}
-        <div class="mb-3 rounded-xl border-2 border-sky-200 bg-sky-50 px-3 py-2 text-sky-900 text-xs">
-          🏆 <strong>{{ tournament.name }}</strong>. Pick <strong>Doubles</strong> if you're registering with a partner, or <strong>Singles</strong> if you're on your own. The organizers will confirm the final format later; if you registered as singles for a doubles tournament, you'll be paired from the singles pool.
+        {# Top explainer — for doubles tournaments, it carries the
+           individual-registration policy language. Kept as an amber "note"
+           card so it reads as important. Singles-only tournaments get the
+           shorter blue helper. #}
+        {% if (tournament.format or 'doubles') == 'doubles' %}
+        <div class="mb-3 rounded-xl border-2 border-amber-300 bg-amber-50 px-4 py-3 text-amber-900 text-sm space-y-2">
+          <p class="font-bold flex items-center gap-2">🏓 Important Registration Note</p>
+          <p>This is a <strong>{{ tournament.category or 'Doubles' }} Tournament</strong>, however, registration can be completed individually.</p>
+          <p>Please note that <strong>individual registration does not guarantee participation</strong> in the tournament.</p>
+          <p>After registration closes, the management may share the list of individually registered players. Participants can then mutually select their preferred partner and register together as a doubles team.</p>
+          <p>Final participation will be subject to successful team formation and confirmation by the tournament management.</p>
         </div>
+        {% else %}
+        <div class="mb-3 rounded-xl border-2 border-sky-200 bg-sky-50 px-3 py-2 text-sky-900 text-xs">
+          🏆 <strong>{{ tournament.name }}</strong>. Register below to join. The organizers will confirm the final draw once registration closes.
+        </div>
+        {% endif %}
         <form id="register_form" method="post" action="/tournaments/{{ tournament.tournament_id }}/register" enctype="multipart/form-data" class="space-y-3">
           {% set fd = form_data or {} %}
           {% set mset = missing or [] %}
@@ -119,15 +133,11 @@
           </div>
 
           {% if (tournament.format or 'doubles') == 'doubles' %}
-          {# Individual-registration notice — shown only when a player picks
-             "Singles" in a doubles tournament. togglePartner() flips its
-             visibility together with the partner block. #}
-          <div id="singles_notice" class="hidden rounded-2xl border-2 border-amber-300 bg-amber-50 p-4 text-amber-900 text-sm space-y-2">
-            <p class="font-bold text-base flex items-center gap-2">🏓 Important Registration Note</p>
-            <p>This is a <strong>{{ tournament.category or 'Doubles' }} Tournament</strong>, however registration can be completed individually.</p>
-            <p><strong>Individual registration does not guarantee participation.</strong> After registration closes, the organizers may share the list of individually registered players so participants can mutually select their preferred partner and register together as a doubles team.</p>
-            <p>Final participation will be subject to successful team formation and confirmation by the tournament management.</p>
-            <p class="pt-1 border-t border-amber-200"><strong>{{ tournament.name }}</strong> is a {{ tournament.category or 'doubles' }} tournament. Since you are registering without a partner, your registration will be accepted as an <strong>individual player registration</strong>.</p>
+          {# Personalised singles-in-doubles reminder. The full policy already
+             lives in the top banner — here we only add the one line that's
+             specifically about the choice the user just made. #}
+          <div id="singles_notice" class="hidden rounded-2xl border-2 border-amber-300 bg-amber-50 p-4 text-amber-900 text-sm">
+            <p><strong>{{ tournament.name }}</strong> is a {{ tournament.category or 'doubles' }} tournament. Since you are registering without a partner, your registration will be accepted as an <strong>individual player registration</strong> — see the note above.</p>
           </div>
           {% endif %}
           <div class="rounded-2xl border-2 border-emerald-100 bg-emerald-50/50 p-3 space-y-3">
