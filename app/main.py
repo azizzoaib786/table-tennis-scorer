@@ -1,6 +1,7 @@
 import uuid
 from datetime import datetime, timezone, timedelta
 from typing import Any, Dict, List, Optional
+import hashlib
 import io
 import os
 
@@ -1547,6 +1548,36 @@ async def registration_submit(request: Request, tournament_id: str,
             return _render_error("Partner ITS must be different from yours.", 400)
         if _norm_phone(phone_v) and _norm_phone(phone_v) == _norm_phone(partner_phone_v):
             return _render_error("Partner phone must be different from yours.", 400)
+
+        # Photo duplicate check: refuse when the exact same file was picked for
+        # both slots (a common mistake — user browses to the same JPEG twice).
+        # We hash both streams to bytes, compare, then rewind so the S3 upload
+        # can still read them. SHA-256 is overkill for equality but essentially
+        # free at 5 MB, and future-proofs against widening the check to
+        # cross-registration duplicates via a stored digest.
+        def _sha256_and_rewind(upload: Optional[UploadFile]) -> str:
+            if upload is None or not (upload.filename or "").strip():
+                return ""
+            f = upload.file
+            f.seek(0)
+            h = hashlib.sha256()
+            while True:
+                chunk = f.read(65536)
+                if not chunk:
+                    break
+                h.update(chunk)
+            f.seek(0)
+            return h.hexdigest()
+
+        primary_sha = _sha256_and_rewind(photo)
+        partner_sha = _sha256_and_rewind(partner_photo)
+        if primary_sha and partner_sha and primary_sha == partner_sha:
+            return _render_error(
+                "Your photo and your partner's photo are the same file. "
+                "Please upload a different image for each player.",
+                400,
+                missing=["photo", "partner_photo"],
+            )
 
     pair_id = uuid.uuid4().hex if match_type == "doubles" else ""
 
