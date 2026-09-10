@@ -66,6 +66,48 @@
             {# Browser timezone offset — see home.html for rationale. #}
             <input type="hidden" name="registration_tz_offset" id="reg_tz_offset_edit"/>
             <script>document.getElementById('reg_tz_offset_edit').value = String(new Date().getTimezoneOffset());</script>
+
+            {# ── Event details (shown on the public registration page) ── #}
+            <div class="sm:col-span-3 mt-2 pt-3 border-t-2 border-sky-200">
+              <p class="text-xs font-bold uppercase text-sky-800 mb-2">📣 Event details (shown on the public registration page)</p>
+            </div>
+            <div class="sm:col-span-3">
+              <label class="text-xs font-bold text-sky-900">Organizer</label>
+              <input name="organizer" value="{{ tournament.organizer or '' }}"
+                     placeholder="e.g. AN Sports Dubai in association with FCC"
+                     class="mt-1 w-full rounded-lg border-2 border-sky-200 focus:border-sky-400 px-3 py-2 text-sm"/>
+            </div>
+            <div>
+              <label class="text-xs font-bold text-sky-900">Event date</label>
+              <input name="event_date" value="{{ tournament.event_date or '' }}"
+                     placeholder="e.g. 11 October 2026"
+                     class="mt-1 w-full rounded-lg border-2 border-sky-200 focus:border-sky-400 px-3 py-2 text-sm"/>
+            </div>
+            <div>
+              <label class="text-xs font-bold text-sky-900">Venue</label>
+              <input name="venue" value="{{ tournament.venue or '' }}"
+                     placeholder="e.g. MSB Dubai"
+                     class="mt-1 w-full rounded-lg border-2 border-sky-200 focus:border-sky-400 px-3 py-2 text-sm"/>
+            </div>
+            <div>
+              <label class="text-xs font-bold text-sky-900">Category</label>
+              <input name="category" value="{{ tournament.category or '' }}"
+                     placeholder="e.g. Men's Doubles"
+                     class="mt-1 w-full rounded-lg border-2 border-sky-200 focus:border-sky-400 px-3 py-2 text-sm"/>
+            </div>
+            <div class="sm:col-span-2">
+              <label class="text-xs font-bold text-sky-900">Eligibility</label>
+              <input name="eligibility" value="{{ tournament.eligibility or '' }}"
+                     placeholder="e.g. Age 14+"
+                     class="mt-1 w-full rounded-lg border-2 border-sky-200 focus:border-sky-400 px-3 py-2 text-sm"/>
+            </div>
+            <div>
+              <label class="text-xs font-bold text-sky-900">Subtitle (headline)</label>
+              <input name="subtitle" value="{{ tournament.subtitle or '' }}"
+                     placeholder="e.g. Men's Doubles Tournament"
+                     class="mt-1 w-full rounded-lg border-2 border-sky-200 focus:border-sky-400 px-3 py-2 text-sm"/>
+            </div>
+
             <div class="sm:col-span-3 flex justify-end">
               <button class="px-4 py-2 rounded-lg bg-sky-600 text-white text-sm font-bold shadow-md">💾 Save settings</button>
             </div>

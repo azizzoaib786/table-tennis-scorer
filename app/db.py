@@ -388,6 +388,21 @@ def list_all_registrations() -> List[Dict[str, Any]]:
     return items
 
 
+def find_registration_by_its(its: str) -> Optional[Dict[str, Any]]:
+    """Return the first registration (across all tournaments) whose primary
+    `its` or `partner_its` equals the given ITS ID. ITS IDs are globally
+    unique per player, so this is used to reject re-registration attempts."""
+    key = (its or "").strip()
+    if not key:
+        return None
+    resp = registrations_tbl.scan(
+        FilterExpression="its = :i OR partner_its = :i",
+        ExpressionAttributeValues={":i": key},
+    )
+    items = resp.get("Items", [])
+    return items[0] if items else None
+
+
 def update_registration_paid(registration_id: str, paid: bool) -> None:
     registrations_tbl.update_item(
         Key={"registration_id": registration_id},

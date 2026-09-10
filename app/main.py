@@ -29,7 +29,7 @@ from .db import (
     add_roster_player, list_roster, delete_roster_player, get_roster_player,
     put_registration, get_registration, list_registrations_by_tournament,
     list_all_registrations, update_registration_paid, delete_registration,
-    find_registration_by_name,
+    find_registration_by_name, find_registration_by_its,
 )
 from .logic import compute_state, player_name
 from .auth import hash_password, verify_password, create_session_token, verify_session_token
@@ -1554,6 +1554,28 @@ async def registration_submit(request: Request, tournament_id: str,
             field_errors=format_errors,
         )
 
+    # ── Global ITS uniqueness: an ITS ID belongs to one physical player
+    # forever, so once it's used in ANY registration (this tournament or a
+    # past one, primary or partner slot) it cannot be reused. We surface a
+    # short per-field error without leaking who the ITS belongs to.
+    its_conflict = find_registration_by_its(its_v)
+    if its_conflict:
+        return _render_error(
+            f"ITS ID {its_v} is already used. If this is really you, please contact the organizer.",
+            409,
+            missing=["its"],
+            field_errors={"its": "Already used."},
+        )
+    if match_type == "doubles":
+        partner_its_conflict = find_registration_by_its(partner_its_v)
+        if partner_its_conflict:
+            return _render_error(
+                f"Partner ITS ID {partner_its_v} is already used. Please double-check your partner's ITS.",
+                409,
+                missing=["partner_its"],
+                field_errors={"partner_its": "Already used."},
+            )
+
     if match_type == "doubles" and partner_name.lower() == name.lower():
         return _render_error("Partner must be a different person.", 400,
                              missing=["partner_name"],
@@ -1935,7 +1957,13 @@ def update_registration_settings(request: Request, tournament_id: str,
                                  format: str = Form("doubles"),
                                  registration_start: str = Form(""),
                                  registration_end: str = Form(""),
-                                 registration_tz_offset: str = Form("")):
+                                 registration_tz_offset: str = Form(""),
+                                 organizer: str = Form(""),
+                                 event_date: str = Form(""),
+                                 venue: str = Form(""),
+                                 category: str = Form(""),
+                                 eligibility: str = Form(""),
+                                 subtitle: str = Form("")):
     user, t = check_tournament_access(request, tournament_id)
     fmt = (format or "doubles").strip().lower()
     if fmt not in ("singles", "doubles"):
@@ -1946,8 +1974,23 @@ def update_registration_settings(request: Request, tournament_id: str,
         tz_off_int = 0
     update_tournament(
         tournament_id,
-        "SET #f = :f, registration_start = :rs, registration_end = :re, registration_tz_offset = :tz",
-        {":f": fmt, ":rs": registration_start.strip(), ":re": registration_end.strip(), ":tz": tz_off_int},
+        (
+            "SET #f = :f, registration_start = :rs, registration_end = :re, "
+            "registration_tz_offset = :tz, organizer = :org, event_date = :ed, "
+            "venue = :vn, category = :cat, eligibility = :el, subtitle = :sub"
+        ),
+        {
+            ":f": fmt,
+            ":rs": registration_start.strip(),
+            ":re": registration_end.strip(),
+            ":tz": tz_off_int,
+            ":org": organizer.strip(),
+            ":ed": event_date.strip(),
+            ":vn": venue.strip(),
+            ":cat": category.strip(),
+            ":el": eligibility.strip(),
+            ":sub": subtitle.strip(),
+        },
         expr_names={"#f": "format"},
     )
     return HTMLResponse("", status_code=200, headers={"HX-Refresh": "true"})

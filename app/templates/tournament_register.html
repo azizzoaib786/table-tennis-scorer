@@ -14,8 +14,28 @@
         <div class="text-center mb-4">
           <div class="text-4xl">🏓</div>
           <h1 class="text-2xl font-bold text-emerald-900">Register to Play</h1>
-          <p class="text-emerald-700 text-sm font-medium">{{ tournament.name }}</p>
+          <p class="text-emerald-700 text-sm font-medium">{{ tournament.name }}{% if tournament.subtitle %} — {{ tournament.subtitle }}{% endif %}</p>
         </div>
+
+        {% if tournament.organizer or tournament.event_date or tournament.venue or tournament.category or tournament.eligibility %}
+        {# Event overview — shown when the admin has filled any of these fields
+           on the tournament settings. All items are optional; each row only
+           renders when there's something to say. #}
+        <div class="mb-4 rounded-2xl border-2 border-emerald-300 bg-gradient-to-br from-emerald-50 to-teal-50 p-4 space-y-2">
+          <p class="font-bold text-emerald-900 text-base">
+            Get ready for {{ tournament.name }}{% if tournament.subtitle %} – {{ tournament.subtitle }}{% endif %}!
+          </p>
+          {% if tournament.organizer %}
+          <p class="text-sm text-emerald-800">Organized by <strong>{{ tournament.organizer }}</strong></p>
+          {% endif %}
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm text-emerald-900 pt-1">
+            {% if tournament.event_date %}<div>📅 <strong>Date:</strong> {{ tournament.event_date }}</div>{% endif %}
+            {% if tournament.venue %}<div>📍 <strong>Venue:</strong> {{ tournament.venue }}</div>{% endif %}
+            {% if tournament.category %}<div>👥 <strong>Category:</strong> {{ tournament.category }}</div>{% endif %}
+            {% if tournament.eligibility %}<div>🎯 <strong>Eligibility:</strong> {{ tournament.eligibility }}</div>{% endif %}
+          </div>
+        </div>
+        {% endif %}
 
         {% if is_admin_view %}
         <div class="mb-4 rounded-2xl border-2 border-amber-300 bg-amber-50 px-4 py-3 text-amber-900 text-sm">
@@ -104,10 +124,10 @@
              visibility together with the partner block. #}
           <div id="singles_notice" class="hidden rounded-2xl border-2 border-amber-300 bg-amber-50 p-4 text-amber-900 text-sm space-y-2">
             <p class="font-bold text-base flex items-center gap-2">🏓 Important Registration Note</p>
-            <p>This is a <strong>Doubles Tournament</strong>, however registration can be completed individually.</p>
+            <p>This is a <strong>{{ tournament.category or 'Doubles' }} Tournament</strong>, however registration can be completed individually.</p>
             <p><strong>Individual registration does not guarantee participation.</strong> After registration closes, the organizers may share the list of individually registered players so participants can mutually select their preferred partner and register together as a doubles team.</p>
             <p>Final participation will be subject to successful team formation and confirmation by the tournament management.</p>
-            <p class="pt-1 border-t border-amber-200"><strong>{{ tournament.name }}</strong> is a doubles tournament. Since you are registering without a partner, your registration will be accepted as an <strong>individual player registration</strong>.</p>
+            <p class="pt-1 border-t border-amber-200"><strong>{{ tournament.name }}</strong> is a {{ tournament.category or 'doubles' }} tournament. Since you are registering without a partner, your registration will be accepted as an <strong>individual player registration</strong>.</p>
           </div>
           {% endif %}
           <div class="rounded-2xl border-2 border-emerald-100 bg-emerald-50/50 p-3 space-y-3">
