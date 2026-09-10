@@ -98,6 +98,18 @@
             </select>
           </div>
 
+          {% if (tournament.format or 'doubles') == 'doubles' %}
+          {# Individual-registration notice — shown only when a player picks
+             "Singles" in a doubles tournament. togglePartner() flips its
+             visibility together with the partner block. #}
+          <div id="singles_notice" class="hidden rounded-2xl border-2 border-amber-300 bg-amber-50 p-4 text-amber-900 text-sm space-y-2">
+            <p class="font-bold text-base flex items-center gap-2">🏓 Important Registration Note</p>
+            <p>This is a <strong>Doubles Tournament</strong>, however registration can be completed individually.</p>
+            <p><strong>Individual registration does not guarantee participation.</strong> After registration closes, the organizers may share the list of individually registered players so participants can mutually select their preferred partner and register together as a doubles team.</p>
+            <p>Final participation will be subject to successful team formation and confirmation by the tournament management.</p>
+            <p class="pt-1 border-t border-amber-200"><strong>{{ tournament.name }}</strong> is a doubles tournament. Since you are registering without a partner, your registration will be accepted as an <strong>individual player registration</strong>.</p>
+          </div>
+          {% endif %}
           <div class="rounded-2xl border-2 border-emerald-100 bg-emerald-50/50 p-3 space-y-3">
             <p class="text-xs font-bold uppercase text-emerald-700">Your details (all required)</p>
             <div>
@@ -220,6 +232,10 @@
             const block = document.getElementById('partner_block');
             const isDoubles = sel && sel.value === 'doubles';
             block.classList.toggle('hidden', !isDoubles);
+            // Individual-registration notice: mirror the partner block —
+            // visible only when this doubles tournament sees a singles pick.
+            const notice = document.getElementById('singles_notice');
+            if (notice) notice.classList.toggle('hidden', isDoubles);
             ['team_name','partner_name','partner_email','partner_phone','partner_its',
              'partner_age','partner_experience','partner_photo'].forEach(id => {
               const el = document.getElementById(id);
