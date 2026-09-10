@@ -4,6 +4,7 @@ from typing import Any, Dict, List, Optional
 import hashlib
 import io
 import os
+import re
 
 import boto3
 from botocore.exceptions import ClientError
@@ -51,6 +52,30 @@ ALLOWED_PHOTO_MIME = {
 }
 MAX_PHOTO_BYTES = 5 * 1024 * 1024  # 5 MB
 s3_client = boto3.client("s3", region_name=AWS_REGION)
+
+# ── Registration input validators ─────────────────────────────────────────────
+# UAE mobile format: +971 followed by exactly 9 digits (e.g. +971568103175).
+UAE_MOBILE_RE = re.compile(r"^\+971\d{9}$")
+# ITS ID: exactly 8 digits.
+ITS_ID_RE = re.compile(r"^\d{8}$")
+# Placeholder / example email domains we refuse — protects the organiser
+# from having to chase people who used sample data. Extend as needed.
+BLOCKED_EMAIL_DOMAINS = frozenset({
+    "example.com", "example.org", "example.net",
+    "sample.com", "sample.org", "sample.net",
+    "test.com", "test.org", "tester.com",
+    "email.com", "mail.com", "domain.com",
+    "yourdomain.com", "mydomain.com", "yourmail.com",
+    "foo.com", "bar.com", "baz.com",
+    "asdf.com", "abc.com", "xyz.com",
+    "placeholder.com", "somewhere.com", "nowhere.com",
+})
+
+
+def _email_domain(email: str) -> str:
+    """Return the lowercase domain part of an email, or '' if malformed."""
+    e = (email or "").strip().lower()
+    return e.rsplit("@", 1)[1] if "@" in e else ""
 
 
 def _upload_photo_to_s3(upload: "UploadFile", registration_id: str) -> str:
@@ -1420,10 +1445,13 @@ async def registration_submit(request: Request, tournament_id: str,
         "partner_experience": partner_experience if partner_experience in ("beginner", "amateur", "expert") else "beginner",
     }
 
-    def _render_error(msg: str, status: int = 400, missing: Optional[List[str]] = None):
+    def _render_error(msg: str, status: int = 400, missing: Optional[List[str]] = None,
+                      field_errors: Optional[Dict[str, str]] = None):
         """Render the register page with a friendly error banner instead of a JSON 4xx.
-        Preserves what the user typed and highlights missing fields inline so
-        they don't have to re-fill the whole form.
+        Preserves what the user typed and highlights problem fields inline so
+        they don't have to re-fill the whole form. `field_errors` maps a field
+        name to a specific message ("Must be exactly 8 digits") — those override
+        the generic "Required" label in the error banner.
         """
         return templates.TemplateResponse(
             "tournament_register.html",
@@ -1435,6 +1463,7 @@ async def registration_submit(request: Request, tournament_id: str,
                 "flash_error": msg,
                 "form_data": form_data,
                 "missing": missing or [],
+                "field_errors": field_errors or {},
             },
             status_code=status,
         )
@@ -1491,9 +1520,44 @@ async def registration_submit(request: Request, tournament_id: str,
             missing=missing,
         )
 
+    # ── Format checks: run only after every field is present so the user
+    # sees "field required" and "field wrong format" as separate rounds of
+    # feedback (less overwhelming than one giant error banner).
+    format_errors: Dict[str, str] = {}
+    invalid_fields: List[str] = []
+
+    def _fail(field: str, msg: str) -> None:
+        format_errors[field] = msg
+        if field not in invalid_fields:
+            invalid_fields.append(field)
+
+    if not UAE_MOBILE_RE.fullmatch(phone_v):
+        _fail("phone", "Must start with +971 and be followed by 9 digits (e.g. +971568103175).")
+    if not ITS_ID_RE.fullmatch(its_v):
+        _fail("its", "ITS ID must be exactly 8 digits (no spaces or letters).")
+    if _email_domain(email) in BLOCKED_EMAIL_DOMAINS:
+        _fail("email", "Please use your real email address — placeholder domains like example.com aren't accepted.")
+
+    if match_type == "doubles":
+        if not UAE_MOBILE_RE.fullmatch(partner_phone_v):
+            _fail("partner_phone", "Must start with +971 and be followed by 9 digits (e.g. +971568103175).")
+        if not ITS_ID_RE.fullmatch(partner_its_v):
+            _fail("partner_its", "Partner's ITS ID must be exactly 8 digits (no spaces or letters).")
+        if _email_domain(partner_email) in BLOCKED_EMAIL_DOMAINS:
+            _fail("partner_email", "Please use your partner's real email address — placeholder domains aren't accepted.")
+
+    if invalid_fields:
+        return _render_error(
+            "Please fix the highlighted field(s) — see the details next to each.",
+            400,
+            missing=invalid_fields,
+            field_errors=format_errors,
+        )
+
     if match_type == "doubles" and partner_name.lower() == name.lower():
         return _render_error("Partner must be a different person.", 400,
-                             missing=["partner_name"])
+                             missing=["partner_name"],
+                             field_errors={"partner_name": "Partner's name must be different from yours."})
     if partner_experience not in ("beginner", "amateur", "expert"):
         partner_experience = "beginner"
 
@@ -1543,11 +1607,17 @@ async def registration_submit(request: Request, tournament_id: str,
             )
         # Also guard within THIS submission: primary and partner must not share any identifier.
         if _norm(email) and _norm(email) == _norm(partner_email):
-            return _render_error("Partner email must be different from yours.", 400)
+            return _render_error("Partner email must be different from yours.", 400,
+                                 missing=["partner_email"],
+                                 field_errors={"partner_email": "Must be different from your email."})
         if _norm(its_v) and _norm(its_v) == _norm(partner_its_v):
-            return _render_error("Partner ITS must be different from yours.", 400)
+            return _render_error("Partner ITS must be different from yours.", 400,
+                                 missing=["partner_its"],
+                                 field_errors={"partner_its": "Must be different from your ITS ID."})
         if _norm_phone(phone_v) and _norm_phone(phone_v) == _norm_phone(partner_phone_v):
-            return _render_error("Partner phone must be different from yours.", 400)
+            return _render_error("Partner phone must be different from yours.", 400,
+                                 missing=["partner_phone"],
+                                 field_errors={"partner_phone": "Must be different from your phone."})
 
         # Photo duplicate check: refuse when the exact same file was picked for
         # both slots (a common mistake — user browses to the same JPEG twice).

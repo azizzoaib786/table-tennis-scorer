@@ -30,21 +30,28 @@
             <div>
               <div>{{ flash_error }}</div>
               {% if missing %}
+              {% set ferrs = field_errors or {} %}
               <ul class="mt-2 list-disc pl-5 text-rose-800 font-normal">
                 {% for f in missing %}
                 <li>
+                  <strong>
                   {% if f == 'name' %}Full name{% elif f == 'email' %}Email
                   {% elif f == 'phone' %}Phone{% elif f == 'its' %}ITS number
                   {% elif f == 'age' %}Age{% elif f == 'experience' %}Experience level
-                  {% elif f == 'photo' %}Photo (please re-select the file){% elif f == 'team_name' %}Team name
+                  {% elif f == 'photo' %}Photo{% elif f == 'team_name' %}Team name
                   {% elif f == 'partner_name' %}Partner's full name
                   {% elif f == 'partner_email' %}Partner's email
                   {% elif f == 'partner_phone' %}Partner's phone
                   {% elif f == 'partner_its' %}Partner's ITS number
                   {% elif f == 'partner_age' %}Partner's age
                   {% elif f == 'partner_experience' %}Partner's experience
-                  {% elif f == 'partner_photo' %}Partner's photo (please re-select the file)
+                  {% elif f == 'partner_photo' %}Partner's photo
                   {% else %}{{ f }}{% endif %}
+                  </strong>
+                  {%- if ferrs.get(f) %} — {{ ferrs[f] }}
+                  {% elif f == 'photo' %} — please re-select the file
+                  {% elif f == 'partner_photo' %} — please re-select the file
+                  {% endif %}
                 </li>
                 {% endfor %}
               </ul>
@@ -106,14 +113,18 @@
               </div>
               <div>
                 <label class="text-sm font-bold text-emerald-900">Phone *</label>
-                <input name="phone" type="tel" required placeholder="+971 5x xxx xxxx" value="{{ fd.get('phone', '') }}"
+                <input name="phone" type="tel" required placeholder="+971568103175" value="{{ fd.get('phone', '') }}"
+                       pattern="\+971[0-9]{9}" title="Must start with +971 and be followed by 9 digits"
                        class="mt-1 w-full rounded-xl border-2 {% if 'phone' in mset %}border-rose-400 ring-2 ring-rose-200{% else %}border-emerald-200 focus:border-emerald-400{% endif %} px-4 py-3"/>
+                <p class="text-xs text-emerald-700 mt-1">Format: <code>+971</code> followed by 9 digits (e.g. <code>+971568103175</code>).</p>
               </div>
             </div>
             <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
                 <label class="text-sm font-bold text-emerald-900">ITS number *</label>
-                <input name="its" required placeholder="ITS ID" value="{{ fd.get('its', '') }}"
+                <input name="its" required placeholder="12345678" value="{{ fd.get('its', '') }}"
+                       pattern="[0-9]{8}" inputmode="numeric" maxlength="8"
+                       title="ITS ID must be exactly 8 digits"
                        class="mt-1 w-full rounded-xl border-2 {% if 'its' in mset %}border-rose-400 ring-2 ring-rose-200{% else %}border-emerald-200 focus:border-emerald-400{% endif %} px-4 py-3"/>
               </div>
               <div>
@@ -161,14 +172,18 @@
               </div>
               <div>
                 <label class="text-sm font-bold text-teal-900">Partner's phone *</label>
-                <input id="partner_phone" name="partner_phone" type="tel" placeholder="+971 5x xxx xxxx" value="{{ fd.get('partner_phone', '') }}"
+                <input id="partner_phone" name="partner_phone" type="tel" placeholder="+971568103175" value="{{ fd.get('partner_phone', '') }}"
+                       pattern="\+971[0-9]{9}" title="Must start with +971 and be followed by 9 digits"
                        class="mt-1 w-full rounded-xl border-2 {% if 'partner_phone' in mset %}border-rose-400 ring-2 ring-rose-200{% else %}border-teal-200 focus:border-teal-400{% endif %} px-4 py-3"/>
+                <p class="text-xs text-teal-700 mt-1">Same format as yours: <code>+971</code> + 9 digits.</p>
               </div>
             </div>
             <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
                 <label class="text-sm font-bold text-teal-900">Partner's ITS number *</label>
-                <input id="partner_its" name="partner_its" placeholder="ITS ID" value="{{ fd.get('partner_its', '') }}"
+                <input id="partner_its" name="partner_its" placeholder="12345678" value="{{ fd.get('partner_its', '') }}"
+                       pattern="[0-9]{8}" inputmode="numeric" maxlength="8"
+                       title="ITS ID must be exactly 8 digits"
                        class="mt-1 w-full rounded-xl border-2 {% if 'partner_its' in mset %}border-rose-400 ring-2 ring-rose-200{% else %}border-teal-200 focus:border-teal-400{% endif %} px-4 py-3"/>
               </div>
               <div>
