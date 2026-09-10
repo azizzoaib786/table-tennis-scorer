@@ -1342,22 +1342,6 @@ async def registration_submit(request: Request, tournament_id: str,
         if not window["is_open"]:
             raise HTTPException(403, window["reason"])
 
-    def _render_error(msg: str, status: int = 400):
-        """Render the register page with a friendly error banner instead of a JSON 4xx.
-        Called for user-facing validation / duplicate failures.
-        """
-        return templates.TemplateResponse(
-            "tournament_register.html",
-            {
-                "request": request,
-                "tournament": t,
-                "is_admin_view": is_manual_add,
-                "window": _registration_window_state(t),
-                "flash_error": msg,
-            },
-            status_code=status,
-        )
-
     name = name.strip()
     email = email.strip().lower()
     phone_v = phone.strip()
@@ -1367,26 +1351,9 @@ async def registration_submit(request: Request, tournament_id: str,
         age_val = int(age) if age else 0
     except (TypeError, ValueError):
         age_val = 0
-
-    # Primary block — every field is required
-    missing_primary = []
-    if not name: missing_primary.append("name")
-    if not email: missing_primary.append("email")
-    if not phone_v: missing_primary.append("phone")
-    if not its_v: missing_primary.append("ITS number")
-    if age_val <= 0: missing_primary.append("age")
-    if experience not in ("beginner", "amateur", "expert"):
-        missing_primary.append("experience")
-    if photo is None or not (photo.filename or "").strip():
-        missing_primary.append("photo")
-    if missing_primary:
-        return _render_error("Missing required fields: " + ", ".join(missing_primary), 400)
-
     match_type = (match_type or "singles").strip().lower()
     if match_type not in ("singles", "doubles"):
         match_type = "singles"
-
-    # Validate partner block for doubles
     partner_name = partner_name.strip()
     partner_email = partner_email.strip().lower()
     partner_phone_v = partner_phone.strip()
@@ -1396,28 +1363,105 @@ async def registration_submit(request: Request, tournament_id: str,
         partner_age_val = int(partner_age) if partner_age else 0
     except (TypeError, ValueError):
         partner_age_val = 0
+    team_name = (team_name or "").strip()
+
+    # Snapshot the submitted values so we can echo them back on any error
+    # render — the browser resets the form otherwise and the user loses
+    # everything they typed. File inputs can't be prefilled (browser
+    # security), so we only track whether one was previously provided.
+    form_data = {
+        "name": name,
+        "email": email,
+        "phone": phone_v,
+        "its": its_v,
+        "age": age_val if age_val > 0 else "",
+        "experience": experience if experience in ("beginner", "amateur", "expert") else "beginner",
+        "match_type": match_type,
+        "team_name": team_name,
+        "partner_name": partner_name,
+        "partner_email": partner_email,
+        "partner_phone": partner_phone_v,
+        "partner_its": partner_its_v,
+        "partner_age": partner_age_val if partner_age_val > 0 else "",
+        "partner_experience": partner_experience if partner_experience in ("beginner", "amateur", "expert") else "beginner",
+    }
+
+    def _render_error(msg: str, status: int = 400, missing: Optional[List[str]] = None):
+        """Render the register page with a friendly error banner instead of a JSON 4xx.
+        Preserves what the user typed and highlights missing fields inline so
+        they don't have to re-fill the whole form.
+        """
+        return templates.TemplateResponse(
+            "tournament_register.html",
+            {
+                "request": request,
+                "tournament": t,
+                "is_admin_view": is_manual_add,
+                "window": _registration_window_state(t),
+                "flash_error": msg,
+                "form_data": form_data,
+                "missing": missing or [],
+            },
+            status_code=status,
+        )
+
+    # Field name → friendly label used in the error banner and inline notes.
+    FIELD_LABELS = {
+        "name": "Full name",
+        "email": "Email",
+        "phone": "Phone",
+        "its": "ITS number",
+        "age": "Age",
+        "experience": "Experience level",
+        "photo": "Photo",
+        "team_name": "Team name",
+        "partner_name": "Partner's full name",
+        "partner_email": "Partner's email",
+        "partner_phone": "Partner's phone",
+        "partner_its": "Partner's ITS number",
+        "partner_age": "Partner's age",
+        "partner_experience": "Partner's experience",
+        "partner_photo": "Partner's photo",
+    }
+
+    # Collect ALL missing fields in one pass so the user sees the full list
+    # instead of fixing one, resubmitting, and being told about the next.
+    missing: List[str] = []
+    if not name: missing.append("name")
+    if not email: missing.append("email")
+    if not phone_v: missing.append("phone")
+    if not its_v: missing.append("its")
+    if age_val <= 0: missing.append("age")
+    if experience not in ("beginner", "amateur", "expert"):
+        missing.append("experience")
+    if photo is None or not (photo.filename or "").strip():
+        missing.append("photo")
 
     if match_type == "doubles":
-        missing = []
-        if not partner_name: missing.append("partner name")
-        if not partner_email: missing.append("partner email")
-        if not partner_phone_v: missing.append("partner phone")
-        if not partner_its_v: missing.append("partner ITS number")
-        if partner_age_val <= 0: missing.append("partner age")
+        if not team_name: missing.append("team_name")
+        if not partner_name: missing.append("partner_name")
+        if not partner_email: missing.append("partner_email")
+        if not partner_phone_v: missing.append("partner_phone")
+        if not partner_its_v: missing.append("partner_its")
+        if partner_age_val <= 0: missing.append("partner_age")
         if partner_experience not in ("beginner", "amateur", "expert"):
-            missing.append("partner experience")
+            missing.append("partner_experience")
         if partner_photo is None or not (partner_photo.filename or "").strip():
-            missing.append("partner photo")
-        if not (team_name or "").strip():
-            missing.append("team name")
-        if missing:
-            return _render_error("Doubles registration missing: " + ", ".join(missing), 400)
-        if partner_name.lower() == name.lower():
-            return _render_error("Partner must be a different person.", 400)
+            missing.append("partner_photo")
+
+    if missing:
+        pretty = ", ".join(FIELD_LABELS.get(k, k) for k in missing)
+        return _render_error(
+            f"Please fill in the highlighted field(s): {pretty}.",
+            400,
+            missing=missing,
+        )
+
+    if match_type == "doubles" and partner_name.lower() == name.lower():
+        return _render_error("Partner must be a different person.", 400,
+                             missing=["partner_name"])
     if partner_experience not in ("beginner", "amateur", "expert"):
         partner_experience = "beginner"
-
-    team_name = (team_name or "").strip()
 
     # ── Duplicate check: no player may register twice in the same tournament.
     # We compare on any of {email, ITS, phone} (normalized). This catches both:
@@ -1863,7 +1907,10 @@ async def build_participants_from_registrations(request: Request, tournament_id:
         """Add BOTH members of a doubles pair as individual participants, linked by pair_id.
         This keeps the participant pool = players (not teams), so the round form can
         pick 4 distinct people for a doubles match, while match_context() still
-        resolves the team badge via the shared team_name on each registration."""
+        resolves the team badge via the shared team_name on each registration.
+        The primary (the one who filled the registration form) is flagged with
+        `is_primary=True` so the UI can append a "(P)" marker — makes it obvious
+        who to pick first when the admin is composing pair-vs-pair matches."""
         pnm = (primary.get("name") or "").strip()
         qnm = (partner.get("name") or "").strip()
         if not pnm or not qnm:
@@ -1881,6 +1928,7 @@ async def build_participants_from_registrations(request: Request, tournament_id:
                 "pair_id": shared_pair,
                 "partner_name": (other.get("name") or "").strip(),
                 "team_name": team_label,
+                "is_primary": me is primary,
             })
             existing_names.add(nm.lower())
 

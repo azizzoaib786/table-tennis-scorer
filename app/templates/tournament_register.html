@@ -27,7 +27,29 @@
         <div class="mb-4 rounded-2xl border-2 border-rose-300 bg-rose-50 px-4 py-3 text-rose-900 font-semibold text-sm">
           <div class="flex items-start gap-2">
             <span class="text-lg">⚠️</span>
-            <div>{{ flash_error }}</div>
+            <div>
+              <div>{{ flash_error }}</div>
+              {% if missing %}
+              <ul class="mt-2 list-disc pl-5 text-rose-800 font-normal">
+                {% for f in missing %}
+                <li>
+                  {% if f == 'name' %}Full name{% elif f == 'email' %}Email
+                  {% elif f == 'phone' %}Phone{% elif f == 'its' %}ITS number
+                  {% elif f == 'age' %}Age{% elif f == 'experience' %}Experience level
+                  {% elif f == 'photo' %}Photo (please re-select the file){% elif f == 'team_name' %}Team name
+                  {% elif f == 'partner_name' %}Partner's full name
+                  {% elif f == 'partner_email' %}Partner's email
+                  {% elif f == 'partner_phone' %}Partner's phone
+                  {% elif f == 'partner_its' %}Partner's ITS number
+                  {% elif f == 'partner_age' %}Partner's age
+                  {% elif f == 'partner_experience' %}Partner's experience
+                  {% elif f == 'partner_photo' %}Partner's photo (please re-select the file)
+                  {% else %}{{ f }}{% endif %}
+                </li>
+                {% endfor %}
+              </ul>
+              {% endif %}
+            </div>
           </div>
         </div>
         {% endif %}
@@ -56,12 +78,16 @@
           🏆 <strong>{{ tournament.name }}</strong>. Pick <strong>Doubles</strong> if you're registering with a partner, or <strong>Singles</strong> if you're on your own. The organizers will confirm the final format later; if you registered as singles for a doubles tournament, you'll be paired from the singles pool.
         </div>
         <form id="register_form" method="post" action="/tournaments/{{ tournament.tournament_id }}/register" enctype="multipart/form-data" class="space-y-3">
+          {% set fd = form_data or {} %}
+          {% set mset = missing or [] %}
+          {% set has = fd.get('match_type') %}
+          {% set current_mt = fd.get('match_type') or (tournament.format or 'doubles') %}
           <div>
             <label class="text-sm font-bold text-emerald-900">How are you registering? *</label>
             <select id="match_type" name="match_type" onchange="togglePartner()"
                     class="mt-1 w-full rounded-xl border-2 border-emerald-200 focus:border-emerald-400 px-4 py-3">
-              <option value="doubles" {% if (tournament.format or 'doubles') == 'doubles' %}selected{% endif %}>👥 Doubles (with a partner)</option>
-              <option value="singles" {% if (tournament.format or 'doubles') == 'singles' %}selected{% endif %}>🏓 Singles (just me)</option>
+              <option value="doubles" {% if current_mt == 'doubles' %}selected{% endif %}>👥 Doubles (with a partner)</option>
+              <option value="singles" {% if current_mt == 'singles' %}selected{% endif %}>🏓 Singles (just me)</option>
             </select>
           </div>
 
@@ -69,46 +95,48 @@
             <p class="text-xs font-bold uppercase text-emerald-700">Your details (all required)</p>
             <div>
               <label class="text-sm font-bold text-emerald-900">Full name *</label>
-              <input name="name" required placeholder="Aziz Zoaib"
-                     class="mt-1 w-full rounded-xl border-2 border-emerald-200 focus:border-emerald-400 px-4 py-3"/>
+              <input name="name" required placeholder="Aziz Zoaib" value="{{ fd.get('name', '') }}"
+                     class="mt-1 w-full rounded-xl border-2 {% if 'name' in mset %}border-rose-400 ring-2 ring-rose-200{% else %}border-emerald-200 focus:border-emerald-400{% endif %} px-4 py-3"/>
             </div>
             <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
                 <label class="text-sm font-bold text-emerald-900">Email *</label>
-                <input name="email" type="email" required placeholder="you@example.com"
-                       class="mt-1 w-full rounded-xl border-2 border-emerald-200 focus:border-emerald-400 px-4 py-3"/>
+                <input name="email" type="email" required placeholder="you@example.com" value="{{ fd.get('email', '') }}"
+                       class="mt-1 w-full rounded-xl border-2 {% if 'email' in mset %}border-rose-400 ring-2 ring-rose-200{% else %}border-emerald-200 focus:border-emerald-400{% endif %} px-4 py-3"/>
               </div>
               <div>
                 <label class="text-sm font-bold text-emerald-900">Phone *</label>
-                <input name="phone" type="tel" required placeholder="+971 5x xxx xxxx"
-                       class="mt-1 w-full rounded-xl border-2 border-emerald-200 focus:border-emerald-400 px-4 py-3"/>
+                <input name="phone" type="tel" required placeholder="+971 5x xxx xxxx" value="{{ fd.get('phone', '') }}"
+                       class="mt-1 w-full rounded-xl border-2 {% if 'phone' in mset %}border-rose-400 ring-2 ring-rose-200{% else %}border-emerald-200 focus:border-emerald-400{% endif %} px-4 py-3"/>
               </div>
             </div>
             <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
                 <label class="text-sm font-bold text-emerald-900">ITS number *</label>
-                <input name="its" required placeholder="ITS ID"
-                       class="mt-1 w-full rounded-xl border-2 border-emerald-200 focus:border-emerald-400 px-4 py-3"/>
+                <input name="its" required placeholder="ITS ID" value="{{ fd.get('its', '') }}"
+                       class="mt-1 w-full rounded-xl border-2 {% if 'its' in mset %}border-rose-400 ring-2 ring-rose-200{% else %}border-emerald-200 focus:border-emerald-400{% endif %} px-4 py-3"/>
               </div>
               <div>
                 <label class="text-sm font-bold text-emerald-900">Age *</label>
-                <input name="age" type="number" required min="1" max="120" placeholder="25"
-                       class="mt-1 w-full rounded-xl border-2 border-emerald-200 focus:border-emerald-400 px-4 py-3"/>
+                <input name="age" type="number" required min="1" max="120" placeholder="25" value="{{ fd.get('age', '') }}"
+                       class="mt-1 w-full rounded-xl border-2 {% if 'age' in mset %}border-rose-400 ring-2 ring-rose-200{% else %}border-emerald-200 focus:border-emerald-400{% endif %} px-4 py-3"/>
               </div>
             </div>
             <div>
               <label class="text-sm font-bold text-emerald-900">Experience level *</label>
-              <select name="experience" required class="mt-1 w-full rounded-xl border-2 border-emerald-200 focus:border-emerald-400 px-4 py-3">
-                <option value="beginner">🟢 Beginner</option>
-                <option value="amateur">🟡 Amateur</option>
-                <option value="expert">🔴 Expert</option>
+              <select name="experience" required class="mt-1 w-full rounded-xl border-2 {% if 'experience' in mset %}border-rose-400 ring-2 ring-rose-200{% else %}border-emerald-200 focus:border-emerald-400{% endif %} px-4 py-3">
+                <option value="beginner" {% if fd.get('experience') == 'beginner' %}selected{% endif %}>🟢 Beginner</option>
+                <option value="amateur" {% if fd.get('experience') == 'amateur' %}selected{% endif %}>🟡 Amateur</option>
+                <option value="expert" {% if fd.get('experience') == 'expert' %}selected{% endif %}>🔴 Expert</option>
               </select>
             </div>
             <div>
               <label class="text-sm font-bold text-emerald-900">Photo *</label>
               <input name="photo" type="file" required accept="image/jpeg,image/png,image/webp,image/gif"
-                     class="mt-1 w-full rounded-xl border-2 border-emerald-200 focus:border-emerald-400 px-4 py-3 text-sm"/>
-              <p class="text-xs text-emerald-700 mt-1">JPG / PNG / WEBP / GIF, max 5 MB. Shown next to your name on the scoreboard.</p>
+                     class="mt-1 w-full rounded-xl border-2 {% if 'photo' in mset %}border-rose-400 ring-2 ring-rose-200{% else %}border-emerald-200 focus:border-emerald-400{% endif %} px-4 py-3 text-sm"/>
+              <p class="text-xs {% if 'photo' in mset %}text-rose-700 font-semibold{% else %}text-emerald-700{% endif %} mt-1">
+                {% if 'photo' in mset %}⚠️ Please re-select your photo — browsers can't remember file uploads across page reloads.{% else %}JPG / PNG / WEBP / GIF, max 5 MB. Shown next to your name on the scoreboard.{% endif %}
+              </p>
             </div>
           </div>
 
@@ -116,52 +144,54 @@
             <p class="text-xs font-bold uppercase text-teal-700">Team + partner details (all required)</p>
             <div>
               <label class="text-sm font-bold text-teal-900">Team name *</label>
-              <input id="team_name" name="team_name" placeholder="e.g. Smash Kings"
-                     class="mt-1 w-full rounded-xl border-2 border-teal-200 focus:border-teal-400 px-4 py-3"/>
+              <input id="team_name" name="team_name" placeholder="e.g. Smash Kings" value="{{ fd.get('team_name', '') }}"
+                     class="mt-1 w-full rounded-xl border-2 {% if 'team_name' in mset %}border-rose-400 ring-2 ring-rose-200{% else %}border-teal-200 focus:border-teal-400{% endif %} px-4 py-3"/>
               <p class="text-xs text-teal-700 mt-1">Shown on the scoreboard when your pair plays.</p>
             </div>
             <div>
               <label class="text-sm font-bold text-teal-900">Partner's full name *</label>
-              <input id="partner_name" name="partner_name" placeholder="Partner name"
-                     class="mt-1 w-full rounded-xl border-2 border-teal-200 focus:border-teal-400 px-4 py-3"/>
+              <input id="partner_name" name="partner_name" placeholder="Partner name" value="{{ fd.get('partner_name', '') }}"
+                     class="mt-1 w-full rounded-xl border-2 {% if 'partner_name' in mset %}border-rose-400 ring-2 ring-rose-200{% else %}border-teal-200 focus:border-teal-400{% endif %} px-4 py-3"/>
             </div>
             <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
                 <label class="text-sm font-bold text-teal-900">Partner's email *</label>
-                <input id="partner_email" name="partner_email" type="email" placeholder="partner@example.com"
-                       class="mt-1 w-full rounded-xl border-2 border-teal-200 focus:border-teal-400 px-4 py-3"/>
+                <input id="partner_email" name="partner_email" type="email" placeholder="partner@example.com" value="{{ fd.get('partner_email', '') }}"
+                       class="mt-1 w-full rounded-xl border-2 {% if 'partner_email' in mset %}border-rose-400 ring-2 ring-rose-200{% else %}border-teal-200 focus:border-teal-400{% endif %} px-4 py-3"/>
               </div>
               <div>
                 <label class="text-sm font-bold text-teal-900">Partner's phone *</label>
-                <input id="partner_phone" name="partner_phone" type="tel" placeholder="+971 5x xxx xxxx"
-                       class="mt-1 w-full rounded-xl border-2 border-teal-200 focus:border-teal-400 px-4 py-3"/>
+                <input id="partner_phone" name="partner_phone" type="tel" placeholder="+971 5x xxx xxxx" value="{{ fd.get('partner_phone', '') }}"
+                       class="mt-1 w-full rounded-xl border-2 {% if 'partner_phone' in mset %}border-rose-400 ring-2 ring-rose-200{% else %}border-teal-200 focus:border-teal-400{% endif %} px-4 py-3"/>
               </div>
             </div>
             <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
                 <label class="text-sm font-bold text-teal-900">Partner's ITS number *</label>
-                <input id="partner_its" name="partner_its" placeholder="ITS ID"
-                       class="mt-1 w-full rounded-xl border-2 border-teal-200 focus:border-teal-400 px-4 py-3"/>
+                <input id="partner_its" name="partner_its" placeholder="ITS ID" value="{{ fd.get('partner_its', '') }}"
+                       class="mt-1 w-full rounded-xl border-2 {% if 'partner_its' in mset %}border-rose-400 ring-2 ring-rose-200{% else %}border-teal-200 focus:border-teal-400{% endif %} px-4 py-3"/>
               </div>
               <div>
                 <label class="text-sm font-bold text-teal-900">Partner's age *</label>
-                <input id="partner_age" name="partner_age" type="number" min="1" max="120" placeholder="25"
-                       class="mt-1 w-full rounded-xl border-2 border-teal-200 focus:border-teal-400 px-4 py-3"/>
+                <input id="partner_age" name="partner_age" type="number" min="1" max="120" placeholder="25" value="{{ fd.get('partner_age', '') }}"
+                       class="mt-1 w-full rounded-xl border-2 {% if 'partner_age' in mset %}border-rose-400 ring-2 ring-rose-200{% else %}border-teal-200 focus:border-teal-400{% endif %} px-4 py-3"/>
               </div>
             </div>
             <div>
               <label class="text-sm font-bold text-teal-900">Partner's experience *</label>
-              <select id="partner_experience" name="partner_experience" class="mt-1 w-full rounded-xl border-2 border-teal-200 focus:border-teal-400 px-4 py-3">
-                <option value="beginner">🟢 Beginner</option>
-                <option value="amateur">🟡 Amateur</option>
-                <option value="expert">🔴 Expert</option>
+              <select id="partner_experience" name="partner_experience" class="mt-1 w-full rounded-xl border-2 {% if 'partner_experience' in mset %}border-rose-400 ring-2 ring-rose-200{% else %}border-teal-200 focus:border-teal-400{% endif %} px-4 py-3">
+                <option value="beginner" {% if fd.get('partner_experience') == 'beginner' %}selected{% endif %}>🟢 Beginner</option>
+                <option value="amateur" {% if fd.get('partner_experience') == 'amateur' %}selected{% endif %}>🟡 Amateur</option>
+                <option value="expert" {% if fd.get('partner_experience') == 'expert' %}selected{% endif %}>🔴 Expert</option>
               </select>
             </div>
             <div>
               <label class="text-sm font-bold text-teal-900">Partner's photo *</label>
               <input id="partner_photo" name="partner_photo" type="file" accept="image/jpeg,image/png,image/webp,image/gif"
-                     class="mt-1 w-full rounded-xl border-2 border-teal-200 focus:border-teal-400 px-4 py-3 text-sm"/>
-              <p class="text-xs text-teal-700 mt-1">JPG / PNG / WEBP / GIF, max 5 MB.</p>
+                     class="mt-1 w-full rounded-xl border-2 {% if 'partner_photo' in mset %}border-rose-400 ring-2 ring-rose-200{% else %}border-teal-200 focus:border-teal-400{% endif %} px-4 py-3 text-sm"/>
+              <p class="text-xs {% if 'partner_photo' in mset %}text-rose-700 font-semibold{% else %}text-teal-700{% endif %} mt-1">
+                {% if 'partner_photo' in mset %}⚠️ Please re-select your partner's photo — browsers can't remember file uploads across page reloads.{% else %}JPG / PNG / WEBP / GIF, max 5 MB.{% endif %}
+              </p>
             </div>
           </div>
 
