@@ -29,7 +29,7 @@ from .db import (
     add_roster_player, list_roster, delete_roster_player, get_roster_player,
     put_registration, get_registration, list_registrations_by_tournament,
     list_all_registrations, update_registration_paid, delete_registration,
-    find_registration_by_name, find_registration_by_its,
+    find_registration_by_name, find_registration_by_its, put_registrations_transact,
 )
 from .logic import compute_state, player_name
 from .auth import hash_password, verify_password, create_session_token, verify_session_token
@@ -1673,11 +1673,20 @@ async def registration_submit(request: Request, tournament_id: str,
 
     pair_id = uuid.uuid4().hex if match_type == "doubles" else ""
 
-    # Primary registration
+    # ── Photo uploads happen BEFORE any DynamoDB write. For doubles, both
+    # photos must land in S3 successfully before we commit either registration
+    # row — this shrinks the failure window so a crash/error can't leave a
+    # DB row pointing at a photo that never made it to S3.
     reg_id = uuid.uuid4().hex
     photo_key = ""
     if photo is not None and (photo.filename or "").strip():
         photo_key = _upload_photo_to_s3(photo, reg_id)
+
+    partner_reg_id = uuid.uuid4().hex if match_type == "doubles" else ""
+    partner_photo_key = ""
+    if match_type == "doubles" and partner_photo is not None and (partner_photo.filename or "").strip():
+        partner_photo_key = _upload_photo_to_s3(partner_photo, partner_reg_id)
+
     primary_item = {
         "registration_id": reg_id,
         "tournament_id": tournament_id,
@@ -1696,15 +1705,13 @@ async def registration_submit(request: Request, tournament_id: str,
         primary_item["pair_id"] = pair_id
         primary_item["partner_name"] = partner_name
         primary_item["team_name"] = team_name
-    put_registration(primary_item)
 
-    # Partner registration (linked by pair_id)
+    # ── Commit registration row(s). Doubles writes both the primary and
+    # partner rows in a single DynamoDB transaction (all-or-nothing) so a
+    # mid-write failure can never leave one half of a pair registered
+    # without the other.
     if match_type == "doubles":
-        partner_reg_id = uuid.uuid4().hex
-        partner_photo_key = ""
-        if partner_photo is not None and (partner_photo.filename or "").strip():
-            partner_photo_key = _upload_photo_to_s3(partner_photo, partner_reg_id)
-        put_registration({
+        partner_item = {
             "registration_id": partner_reg_id,
             "tournament_id": tournament_id,
             "name": partner_name,
@@ -1720,7 +1727,10 @@ async def registration_submit(request: Request, tournament_id: str,
             "pair_id": pair_id,
             "partner_name": name,
             "team_name": team_name,
-        })
+        }
+        put_registrations_transact([primary_item, partner_item])
+    else:
+        put_registrations_transact([primary_item])
 
     flash_msg = (
         f"✅ Thanks {name}! Team \"{team_name}\" ({name} & {partner_name}) is registered for "

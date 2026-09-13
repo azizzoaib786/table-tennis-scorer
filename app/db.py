@@ -1,6 +1,7 @@
 import os
 import boto3
 from boto3.dynamodb.conditions import Key, Attr
+from boto3.dynamodb.types import TypeSerializer
 from typing import Any, Dict, List, Optional
 
 # AWS configuration
@@ -364,6 +365,39 @@ def get_roster_player(player_id: str) -> Optional[Dict[str, Any]]:
 # ── Tournament registrations (public sign-up to play) ─────────────────────────
 def put_registration(item: Dict[str, Any]) -> None:
     registrations_tbl.put_item(Item=item)
+
+
+_dynamo_serializer = TypeSerializer()
+
+
+def put_registrations_transact(items: List[Dict[str, Any]]) -> None:
+    """Atomically write multiple registration rows (e.g. a doubles pair's
+    primary + partner) in a single DynamoDB transaction. Either every row
+    commits or none do — prevents an orphaned "half a pair" registration if
+    a photo upload, network blip, or process crash interrupts the write
+    partway through. Each item must already contain a unique
+    `registration_id` (we guard against silently overwriting one with a
+    ConditionExpression, though uuid4 collisions are effectively impossible).
+    """
+    if not items:
+        return
+    if len(items) == 1:
+        # Single-row writes don't need a transaction — plain put_item is
+        # cheaper and this keeps singles registrations on the simple path.
+        put_registration(items[0])
+        return
+    client = ddb.meta.client
+    transact_items = [
+        {
+            "Put": {
+                "TableName": REGISTRATIONS_TABLE,
+                "Item": {k: _dynamo_serializer.serialize(v) for k, v in item.items()},
+                "ConditionExpression": "attribute_not_exists(registration_id)",
+            }
+        }
+        for item in items
+    ]
+    client.transact_write_items(TransactItems=transact_items)
 
 
 def get_registration(registration_id: str) -> Optional[Dict[str, Any]]:
