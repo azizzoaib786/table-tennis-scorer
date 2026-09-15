@@ -12,7 +12,11 @@
     <meta name="apple-mobile-web-app-title" content="TTScorer" />
     <link rel="apple-touch-icon" href="/static/icons/icon-192.png" />
   </head>
-  <body class="bg-gradient-to-br from-emerald-100 via-teal-100 to-sky-100 min-h-screen flex items-center justify-center p-4">
+  <body class="bg-gradient-to-br from-emerald-100 via-teal-100 to-sky-100 min-h-screen flex flex-col p-4">
+    <div class="w-full max-w-3xl mx-auto">
+      {% include "partials/branding_header.html" %}
+    </div>
+    <div class="flex-1 flex items-center justify-center w-full">
     <div class="max-w-md w-full">
       <div class="bg-gradient-to-br from-emerald-50 to-teal-50 rounded-3xl border-2 border-emerald-300 shadow-2xl p-8">
         <div class="text-center mb-6">
@@ -57,6 +61,7 @@
         </p>
         <p class="text-xs text-emerald-600 mt-1">Created with ❤️ by <a href="https://azizzoaib.com" target="_blank" rel="noopener" class="font-semibold hover:underline">Aziz Zoaib</a></p>
       </div>
+    </div>
     </div>
   </body>
 </html>

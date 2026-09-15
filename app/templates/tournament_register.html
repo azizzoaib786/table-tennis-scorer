@@ -10,14 +10,7 @@
   </head>
   <body class="bg-gradient-to-br from-emerald-100 via-teal-100 to-sky-100 min-h-screen">
     <div class="max-w-2xl mx-auto p-3 sm:p-4">
-      {# FCC organizer logo — top-right above the registration card.
-         onerror hides it if the /static asset isn't deployed yet. #}
-      <div class="flex justify-end mb-2">
-        <img src="/static/fcc-logo.jpeg"
-             alt="Friends Cricket Club"
-             class="h-14 sm:h-16 w-auto drop-shadow-lg"
-             onerror="this.style.display='none'"/>
-      </div>
+      {% include "partials/branding_header.html" %}
       <div class="bg-white rounded-3xl shadow-2xl border-2 border-emerald-200 p-5">
         <div class="text-center mb-4">
           <div class="text-4xl">🏓</div>

@@ -11,15 +11,7 @@
   </head>
   <body class="bg-gradient-to-br from-sky-100 via-indigo-100 to-emerald-100 min-h-screen">
     <div class="max-w-3xl mx-auto p-3 sm:p-4">
-      {# FCC organizer logo — shown top-right above the tournament card
-         when the file exists in /static. onerror hides it if the asset
-         isn't deployed yet, so this stays safe cross-environment. #}
-      <div class="flex justify-end mb-2">
-        <img src="/static/fcc-logo.jpeg"
-             alt="Friends Cricket Club"
-             class="h-14 sm:h-16 w-auto drop-shadow-lg"
-             onerror="this.style.display='none'"/>
-      </div>
+      {% include "partials/branding_header.html" %}
       {% include "partials/tournament_header.html" %}
 
       <div id="tournament-body" class="mt-3 sm:mt-4">

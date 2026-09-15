@@ -1,0 +1,19 @@
+{# Shared branding strip: AN Sports (organizer) · Tournament logo (event) · FCC (venue partner).
+   Included at the top of every page's outer container. Each <img> falls back
+   to display:none via onerror if the /static asset is missing, so pages stay
+   safe even if an image hasn't been uploaded yet. Height auto-scales from
+   mobile → desktop. #}
+<div class="flex items-center justify-between gap-2 mb-3 sm:mb-4">
+  <img src="/static/ansports-logo.png"
+       alt="AN Sports Dubai"
+       class="h-12 sm:h-16 w-auto drop-shadow"
+       onerror="this.style.display='none'"/>
+  <img src="/static/tournament-logo.png"
+       alt="Tournament"
+       class="h-14 sm:h-20 w-auto drop-shadow-lg"
+       onerror="this.style.display='none'"/>
+  <img src="/static/fcc-logo.jpeg"
+       alt="Friends Cricket Club"
+       class="h-12 sm:h-16 w-auto drop-shadow"
+       onerror="this.style.display='none'"/>
+</div>
