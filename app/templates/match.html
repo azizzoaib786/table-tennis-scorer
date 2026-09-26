@@ -20,9 +20,12 @@
       <div class="bg-white rounded-2xl border-2 border-emerald-200 shadow-xl p-4 sm:p-5">
         <div class="flex items-start justify-between gap-3 flex-wrap">
           <div class="flex-1 min-w-0">
-            <div class="flex items-center gap-2 mb-1">
+            <div class="flex items-center gap-2 mb-1 flex-wrap">
               <span class="text-2xl">🏓</span>
               <h1 class="text-xl sm:text-2xl font-bold text-emerald-900 truncate">{{ match.name }}</h1>
+              {% if match.table_number %}
+                <span class="px-2 py-0.5 rounded-full bg-indigo-600 text-white text-xs font-black shadow">🪧 Table {{ match.table_number }}</span>
+              {% endif %}
             </div>
             <p class="text-emerald-700 text-sm font-medium">Bo{{ match.best_of }} • First to {{ match.points_to_win }} • Win by 2</p>
             <div class="mt-2 flex items-center gap-2">

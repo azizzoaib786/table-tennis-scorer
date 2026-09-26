@@ -1,4 +1,18 @@
 <div id="scoreboard-inner" class="space-y-4">
+  {% if lock and not lock.held_by_me and not lock.stale %}
+    <div class="rounded-2xl border-2 border-amber-400 bg-amber-50 text-amber-900 p-3 flex items-center justify-between gap-3 shadow-md">
+      <div class="text-sm font-semibold">
+        🔒 <strong>{{ lock.held_by_name }}</strong> is scoring this match
+        <span class="opacity-70">(active {{ lock.age_sec }}s ago)</span>.
+        Points you enter may conflict with theirs.
+      </div>
+      <form hx-post="/matches/{{ match.match_id }}/takeover"
+            hx-target="#scoreboard-inner" hx-swap="outerHTML"
+            hx-confirm="Take over scoring from {{ lock.held_by_name }}?">
+        <button class="px-3 py-2 rounded-lg bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold shadow">Take over</button>
+      </form>
+    </div>
+  {% endif %}
   {% if flash %}
     <div id="flash-banner"
          data-service-change="{{ '1' if state.service_change else '0' }}"

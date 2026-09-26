@@ -143,13 +143,26 @@ def _advancing_participants(tournament: dict, round_num: int) -> list:
         Doubles winner: 2 participants (both members of the winning pair).
     Falls back to all participants if the previous round has no decided winners
     yet (so the dropdown is never empty and losers can still be manually chosen
-    for byes / corrections)."""
+    for byes / corrections).
+
+    Stage-type overrides (for pool-stage + plate formats):
+      * If the current round is stage_type "pool", "plate", or "custom" → all
+        participants (admin needs full manual control for seeding losers or
+        cross-pool draws).
+      * If the previous round is stage_type "pool" → all participants (bridge
+        from pool stage into knockout, e.g. Top-4-per-pool → Round of 16).
+    """
     participants = tournament.get("participants", []) or []
     if round_num <= 1:
         return participants
     rounds = tournament.get("rounds", []) or []
+    current = next((r for r in rounds if int(r.get("round_num", 0)) == int(round_num)), None)
+    if current and current.get("stage_type") in ("pool", "plate", "custom"):
+        return participants
     prev = next((r for r in rounds if int(r.get("round_num", 0)) == int(round_num) - 1), None)
     if not prev:
+        return participants
+    if prev.get("stage_type") in ("pool", "plate", "custom"):
         return participants
     advancing_ids = set()
     for m in prev.get("matches", []) or []:
@@ -385,6 +398,74 @@ def check_tournament_access(request: Request, tournament_id: str):
     raise HTTPException(status_code=403, detail="Access denied")
 
 
+# ── Scorer soft-lock ──────────────────────────────────────────────────────────
+# Prevent two scorers from clobbering the same match. A "lock" is stored on the
+# match record as (active_scorer_id, active_scorer_name, active_scorer_at).
+# Any scoring action refreshes the heartbeat. The lock is soft: another scorer
+# can force-take-over via POST /matches/{id}/takeover — we surface a warning
+# banner but never block writes (keeps the tournament moving under bad wifi).
+LOCK_STALE_SECONDS = 5 * 60  # 5 min without a heartbeat → lock is stale
+
+
+def _lock_state(match: Dict[str, Any], user: Dict[str, Any]) -> Dict[str, Any]:
+    """Compute a small view of the current lock state for templates.
+    Returns dict:
+      held_by_id, held_by_name, held_by_me (bool), stale (bool), age_sec (int)
+    """
+    holder_id = (match.get("active_scorer_id") or "").strip()
+    holder_nm = (match.get("active_scorer_name") or "").strip()
+    at = (match.get("active_scorer_at") or "").strip()
+    if not holder_id:
+        return {"held_by_id": "", "held_by_name": "",
+                "held_by_me": False, "stale": True, "age_sec": 0}
+    age = 0
+    try:
+        # Parse the ISO-like stamp we write in now_ts(); tolerate the '#uuid'
+        # suffix by splitting on '#'.
+        ts_iso = at.split("#", 1)[0]
+        dt = datetime.strptime(ts_iso.rstrip("Z"), "%Y-%m-%dT%H:%M:%S.%f").replace(tzinfo=timezone.utc)
+        age = int((datetime.now(timezone.utc) - dt).total_seconds())
+    except Exception:
+        age = LOCK_STALE_SECONDS + 1  # treat unparseable as stale
+    stale = age >= LOCK_STALE_SECONDS
+    return {
+        "held_by_id": holder_id,
+        "held_by_name": holder_nm or "another scorer",
+        "held_by_me": (holder_id == user.get("user_id")),
+        "stale": stale,
+        "age_sec": age,
+    }
+
+
+def _touch_lock(match_id: str, user: Dict[str, Any]) -> None:
+    """Claim or refresh the scorer lock for `user` on this match.
+    Always overwrites active_scorer_* — the caller is expected to have already
+    decided whether to take over."""
+    update_match(
+        match_id,
+        "SET active_scorer_id = :uid, active_scorer_name = :nm, active_scorer_at = :at",
+        {
+            ":uid": user["user_id"],
+            ":nm": (user.get("username") or "scorer"),
+            ":at": now_ts(),
+        },
+    )
+
+
+def _maybe_claim(match: Dict[str, Any], user: Dict[str, Any]) -> Dict[str, Any]:
+    """Claim the lock if it is free / stale / already ours. Returns updated
+    lock state for template rendering. Never raises — a busy lock is
+    displayed as a warning, not an error."""
+    st = _lock_state(match, user)
+    if st["held_by_me"] or st["stale"]:
+        _touch_lock(match["match_id"], user)
+        # Reflect the fresh claim so templates render "you" immediately.
+        st = {"held_by_id": user["user_id"],
+              "held_by_name": (user.get("username") or "scorer"),
+              "held_by_me": True, "stale": False, "age_sec": 0}
+    return st
+
+
 def match_context(request: Request, match: Dict[str, Any], user: Optional[Dict[str, Any]] = None,
                   flash: Optional[str] = None) -> Dict[str, Any]:
     ev = list_events(match["match_id"])
@@ -435,6 +516,7 @@ def match_context(request: Request, match: Dict[str, Any], user: Optional[Dict[s
         "photo_b2": photos["b2"],
         "team_a": team_a,
         "team_b": team_b,
+        "lock": _lock_state(match, user) if user else None,
     }
 
 
@@ -965,8 +1047,31 @@ def create_match(request: Request,
 @app.get("/matches/{match_id}", response_class=HTMLResponse)
 def match_page(request: Request, match_id: str):
     user, match = check_match_access(request, match_id)
+    # Soft-claim the scorer lock. If someone else holds a fresh lock we
+    # DON'T overwrite it here — the template surfaces a banner with a
+    # 'Take over' button (see /matches/{id}/takeover below).
+    lock = _lock_state(match, user)
+    if lock["held_by_me"] or lock["stale"]:
+        _touch_lock(match_id, user)
+        match = must_match(match_id)
     ctx = match_context(request, match, user=user)
     return templates.TemplateResponse("match.html", ctx)
+
+
+@app.post("/matches/{match_id}/takeover", response_class=HTMLResponse)
+def match_takeover(request: Request, match_id: str):
+    """Force-claim the scorer lock for the current user. Used by the 'Take
+    over' button on the match page banner. Returns the fresh scoreboard
+    partial so htmx can swap it inline."""
+    user, match = check_match_access(request, match_id)
+    _touch_lock(match_id, user)
+    match2 = must_match(match_id)
+    state = compute_state(match2, list_events(match_id))
+    return templates.TemplateResponse("partials/scoreboard.html", {
+        "request": request, "user": user, "match": match2, "state": state,
+        "lock": _lock_state(match2, user),
+        "flash": "🔒 You are now the active scorer.",
+    })
 
 
 @app.get("/live", response_class=HTMLResponse)
@@ -1087,11 +1192,15 @@ def add_point(request: Request, match_id: str, ab: str):
     if ab not in ("A", "B"):
         raise HTTPException(400, "scorer must be A or B")
 
+    # Refresh the soft-lock heartbeat on every scoring action.
+    _touch_lock(match_id, user)
+
     ev = list_events(match_id)
     state = compute_state(match, ev)
     if state.get("match_winner"):
         return templates.TemplateResponse("partials/scoreboard.html", {
             "request": request, "user": user, "match": match, "state": state,
+            "lock": _lock_state(match, user),
             "flash": "🏆 Match is already over."
         })
 
@@ -1120,7 +1229,8 @@ def add_point(request: Request, match_id: str, ab: str):
         flash = f"🔁 Service change — {server_nm} to serve"
 
     return templates.TemplateResponse("partials/scoreboard.html", {
-        "request": request, "user": user, "match": match2, "state": state2, "flash": flash,
+        "request": request, "user": user, "match": match2, "state": state2,
+        "lock": _lock_state(match2, user), "flash": flash,
     })
 
 
@@ -1128,10 +1238,12 @@ def add_point(request: Request, match_id: str, ab: str):
 def add_let(request: Request, match_id: str):
     """Record a let (net on serve) — no point awarded, serve is replayed."""
     user, match = check_match_access(request, match_id)
+    _touch_lock(match_id, user)
     state = compute_state(match, list_events(match_id))
     if state.get("match_winner"):
         return templates.TemplateResponse("partials/scoreboard.html", {
             "request": request, "user": user, "match": match, "state": state,
+            "lock": _lock_state(match, user),
             "flash": "🏆 Match is already over."
         })
     put_event({
@@ -1146,6 +1258,7 @@ def add_let(request: Request, match_id: str):
     state2 = compute_state(match2, list_events(match_id))
     return templates.TemplateResponse("partials/scoreboard.html", {
         "request": request, "user": user, "match": match2, "state": state2,
+        "lock": _lock_state(match2, user),
         "flash": "🌐 Let — serve replayed (no point).",
     })
 
@@ -1153,12 +1266,14 @@ def add_let(request: Request, match_id: str):
 @app.post("/matches/{match_id}/undo", response_class=HTMLResponse)
 def undo_point(request: Request, match_id: str):
     user, match = check_match_access(request, match_id)
+    _touch_lock(match_id, user)
     deleted = delete_last_event(match_id)
     match2 = must_match(match_id)
     state2 = compute_state(match2, list_events(match_id))
     flash = "↩️ Last point undone." if deleted else "⚠️ No points to undo."
     return templates.TemplateResponse("partials/scoreboard.html", {
-        "request": request, "user": user, "match": match2, "state": state2, "flash": flash,
+        "request": request, "user": user, "match": match2, "state": state2,
+        "lock": _lock_state(match2, user), "flash": flash,
     })
 
 
@@ -2169,13 +2284,17 @@ async def build_participants_from_registrations(request: Request, tournament_id:
 
 
 @app.post("/tournaments/{tournament_id}/rounds", response_class=HTMLResponse)
-def add_round(request: Request, tournament_id: str, round_name: str = Form(...)):
+def add_round(request: Request, tournament_id: str, round_name: str = Form(...),
+              stage_type: str = Form("knockout")):
     user, t = check_tournament_access(request, tournament_id)
     rounds = t.get("rounds", [])
     round_num = (max((int(r.get("round_num", 0)) for r in rounds), default=0)) + 1
+    if stage_type not in ("knockout", "pool", "plate", "custom"):
+        stage_type = "knockout"
     rounds.append({
         "round_num": round_num,
         "name": round_name.strip() or f"Round {round_num}",
+        "stage_type": stage_type,
         "matches": [],
     })
     update_tournament(tournament_id, "SET rounds = :r", {":r": rounds})
@@ -2187,11 +2306,143 @@ def add_round(request: Request, tournament_id: str, round_name: str = Form(...))
     })
 
 
+def _round_robin_pairings(n: int) -> List[List[tuple]]:
+    """Return a list of (n-1) rounds, each a list of pair indices (0-based).
+    Uses the standard 'circle' method — team 0 is fixed, others rotate.
+    n must be even. Returns for n=6 the same pattern as the tournament PDF."""
+    if n < 2 or n % 2 != 0:
+        raise ValueError("round-robin needs an even number of teams (>= 2)")
+    teams = list(range(n))
+    rounds = []
+    for _ in range(n - 1):
+        pairs = []
+        for i in range(n // 2):
+            a = teams[i]
+            b = teams[n - 1 - i]
+            pairs.append((a, b))
+        rounds.append(pairs)
+        # rotate all but the first element
+        teams = [teams[0]] + [teams[-1]] + teams[1:-1]
+    return rounds
+
+
+@app.post("/tournaments/{tournament_id}/pools", response_class=HTMLResponse)
+def create_pool_round_robin(
+    request: Request,
+    tournament_id: str,
+    pool_name: str = Form(...),
+    teams: str = Form(...),
+    match_type: str = Form(""),
+    num_tables: int = Form(6),
+    start_table: int = Form(1),
+):
+    """Create a new pool round: one round with all N*(N-1)/2 round-robin
+    matches for the supplied teams. Teams must already exist as tournament
+    participants (case-insensitive). Table numbers are distributed
+    round-robin across `num_tables` tables starting from `start_table`.
+
+    Team format per line:
+      Singles:  Alice
+      Doubles:  Alice + Bob        (or 'Alice & Bob' or 'Alice / Bob')
+
+    Lines starting with '#' are ignored. Blank lines are ignored.
+    """
+    user, t = check_tournament_access(request, tournament_id)
+    participants = t.get("participants", [])
+    if not participants:
+        raise HTTPException(400, "Add participants before creating a pool")
+
+    tourney_fmt = (match_type or t.get("format") or "doubles").strip().lower()
+    if tourney_fmt not in ("singles", "doubles"):
+        tourney_fmt = "doubles"
+
+    def _side_names(txt: str) -> List[str]:
+        return [n.strip() for n in re.split(r"\s*[+&/]\s*", txt) if n.strip()]
+
+    team_rows: List[List[Dict[str, Any]]] = []  # each row = list of participant dicts
+    problems: List[str] = []
+    for raw in teams.splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#"):
+            continue
+        names = _side_names(line)
+        expected = 2 if tourney_fmt == "doubles" else 1
+        if len(names) != expected:
+            problems.append(f"⚠️ '{line[:60]}' needs {expected} name(s)")
+            continue
+        resolved = [_find_participant_by_name(participants, n) for n in names]
+        if any(p is None for p in resolved):
+            missing = [n for n, p in zip(names, resolved) if p is None]
+            problems.append(f"❓ Unknown: {', '.join(missing)}")
+            continue
+        team_rows.append(resolved)
+
+    if len(team_rows) < 2:
+        detail = "; ".join(problems) if problems else "Need at least 2 teams"
+        raise HTTPException(400, detail)
+    if len(team_rows) % 2 != 0:
+        raise HTTPException(400, f"Round-robin needs an even number of teams (got {len(team_rows)})")
+
+    # De-dup: same participant appearing on two different teams is an error.
+    all_ids = [p["id"] for row in team_rows for p in row]
+    if len(set(all_ids)) != len(all_ids):
+        raise HTTPException(400, "A participant appears on more than one team")
+
+    # Generate the round-robin schedule and flatten to a single list of pairings.
+    schedule = _round_robin_pairings(len(team_rows))
+
+    rounds = t.get("rounds", [])
+    round_num = (max((int(r.get("round_num", 0)) for r in rounds), default=0)) + 1
+    new_matches: List[Dict[str, Any]] = []
+    slot = 1
+    tbl_span = max(1, int(num_tables or 1))
+    tbl_start = max(1, int(start_table or 1))
+    for round_pairs in schedule:
+        for (i, j) in round_pairs:
+            side_a = team_rows[i]
+            side_b = team_rows[j]
+            table_num = tbl_start + ((slot - 1) % tbl_span)
+            pair = {
+                "slot": slot,
+                "match_type": tourney_fmt,
+                "a_name": side_a[0]["name"], "a_id": side_a[0]["id"],
+                "b_name": side_b[0]["name"], "b_id": side_b[0]["id"],
+                "table_number": int(table_num),
+                "match_id": "",
+                "winner": "",
+                "winner_name": "",
+            }
+            if tourney_fmt == "doubles":
+                pair["a2_name"] = side_a[1]["name"]; pair["a2_id"] = side_a[1]["id"]
+                pair["b2_name"] = side_b[1]["name"]; pair["b2_id"] = side_b[1]["id"]
+            new_matches.append(pair)
+            slot += 1
+
+    rounds.append({
+        "round_num": round_num,
+        "name": pool_name.strip() or f"Pool {round_num}",
+        "stage_type": "pool",
+        "matches": new_matches,
+    })
+    update_tournament(tournament_id, "SET rounds = :r", {":r": rounds})
+    t2 = must_tournament(tournament_id)
+
+    flash = f"✅ Created {pool_name.strip()} with {len(new_matches)} matches on tables {tbl_start}–{tbl_start + tbl_span - 1}"
+    if problems:
+        flash += " • " + " • ".join(problems[:3])
+    return templates.TemplateResponse("partials/tournament_body.html", {
+        "request": request, "user": user, "tournament": t2,
+        "roster": list_roster(),
+        "flash": flash,
+    })
+
+
 @app.post("/tournaments/{tournament_id}/rounds/{round_num}/pairs", response_class=HTMLResponse)
 def add_pair(request: Request, tournament_id: str, round_num: int,
              match_type: str = Form("singles"),
              participant_a: str = Form(...), participant_b: str = Form(...),
-             participant_a2: str = Form(""), participant_b2: str = Form("")):
+             participant_a2: str = Form(""), participant_b2: str = Form(""),
+             table_number: str = Form("")):
     user, t = check_tournament_access(request, tournament_id)
     participants = {p["id"]: p for p in t.get("participants", [])}
     if match_type not in ("singles", "doubles"):
@@ -2227,11 +2478,16 @@ def add_pair(request: Request, tournament_id: str, round_num: int,
     if not target_round:
         raise HTTPException(404, "Round not found")
     slot = (max((int(s.get("slot", 0)) for s in target_round.get("matches", [])), default=0)) + 1
+    try:
+        table_num = int(table_number) if str(table_number).strip() else 0
+    except ValueError:
+        table_num = 0
     pair = {
         "slot": slot,
         "match_type": match_type,
         "a_name": a["name"], "a_id": a["id"],
         "b_name": b["name"], "b_id": b["id"],
+        "table_number": table_num,
         "match_id": "",
         "winner": "",
         "winner_name": "",
@@ -2427,6 +2683,43 @@ def edit_pair(request: Request, tournament_id: str, round_num: int, slot: int,
     })
 
 
+@app.post("/tournaments/{tournament_id}/rounds/{round_num}/pairs/{slot}/table", response_class=HTMLResponse)
+def set_pair_table(request: Request, tournament_id: str, round_num: int, slot: int,
+                   table_number: str = Form("")):
+    """Set / clear the table number label on a pair. Also propagates to the
+    live match record if the pair has already been started (so scorers see
+    the table number next to the score)."""
+    user, t = check_tournament_access(request, tournament_id)
+    rounds = t.get("rounds", [])
+    target_round = next((r for r in rounds if int(r.get("round_num", 0)) == int(round_num)), None)
+    if not target_round:
+        raise HTTPException(404, "Round not found")
+    pair = next((m for m in target_round.get("matches", []) if int(m.get("slot", 0)) == int(slot)), None)
+    if not pair:
+        raise HTTPException(404, "Pair not found")
+    try:
+        tn = int(table_number) if str(table_number).strip() else 0
+    except ValueError:
+        tn = 0
+    if tn < 0:
+        tn = 0
+    pair["table_number"] = tn
+    update_tournament(tournament_id, "SET rounds = :r", {":r": rounds})
+    # If the match is already live, keep it in sync so scorers see the label.
+    mid = pair.get("match_id")
+    if mid:
+        try:
+            update_match(mid, "SET table_number = :tn", {":tn": tn})
+        except Exception:
+            pass
+    t2 = must_tournament(tournament_id)
+    return templates.TemplateResponse("partials/tournament_body.html", {
+        "request": request, "user": user, "tournament": t2,
+        "roster": list_roster(),
+        "flash": f"🪧 Table {tn or '—'} saved",
+    })
+
+
 @app.post("/tournaments/{tournament_id}/rounds/{round_num}/pairs/{slot}/delete", response_class=HTMLResponse)
 def delete_pair(request: Request, tournament_id: str, round_num: int, slot: int):
     """Remove a pair from the round. Refuses if the match has already been
@@ -2496,6 +2789,7 @@ def start_pair_match(request: Request, tournament_id: str, round_num: int, slot:
         "tournament_id": tournament_id,
         "round_num": int(round_num),
         "match_slot": int(slot),
+        "table_number": int(pair.get("table_number") or 0),
         "stats_recorded": False,
     }
     if match_type == "doubles":
