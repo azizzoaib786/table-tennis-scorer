@@ -1,0 +1,69 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1"/>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <title>Practice Bookings — Admin</title>
+    <link rel="manifest" href="/static/manifest.json" />
+    <meta name="theme-color" content="#059669" />
+  </head>
+  <body class="bg-gradient-to-br from-emerald-100 via-teal-100 to-sky-100 min-h-screen">
+    <div class="max-w-5xl mx-auto p-3 sm:p-4">
+      {% include "partials/branding_header.html" %}
+      <div class="bg-white rounded-2xl border-2 border-emerald-200 shadow-xl p-4 sm:p-5">
+        <div class="flex items-center justify-between flex-wrap gap-2 mb-4">
+          <div>
+            <h1 class="text-2xl font-bold text-emerald-900">📋 Practice Bookings</h1>
+            <p class="text-emerald-700 text-sm font-medium">{{ bookings|length }} total</p>
+          </div>
+          <div class="flex gap-2 flex-wrap">
+            <a href="/admin" class="px-3 py-2 rounded-lg bg-slate-200 hover:bg-slate-300 text-slate-800 text-sm font-bold">← Admin</a>
+            <a href="/booking" target="_blank" class="px-3 py-2 rounded-lg bg-emerald-100 hover:bg-emerald-200 text-emerald-800 text-sm font-bold">🔗 Public booking link</a>
+          </div>
+        </div>
+
+        <form method="get" action="/admin/bookings" class="flex gap-2 mb-4">
+          <input type="text" name="q" value="{{ q }}" placeholder="Search by name, number or reference number" class="flex-1 rounded-xl border-2 border-emerald-200 focus:border-emerald-400 px-4 py-2 text-sm"/>
+          <button type="submit" class="rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 text-sm font-bold shadow-md">Search</button>
+          {% if q %}<a href="/admin/bookings" class="rounded-xl bg-slate-200 hover:bg-slate-300 text-slate-800 px-4 py-2 text-sm font-bold">Clear</a>{% endif %}
+        </form>
+
+        <div class="overflow-x-auto">
+          <table class="w-full text-sm">
+            <thead>
+              <tr class="text-left text-emerald-900 border-b-2 border-emerald-200">
+                <th class="py-2 pr-3">Date</th>
+                <th class="py-2 pr-3">Time</th>
+                <th class="py-2 pr-3">Table</th>
+                <th class="py-2 pr-3">Name</th>
+                <th class="py-2 pr-3">Number</th>
+                <th class="py-2 pr-3">Reference</th>
+                <th class="py-2 pr-3"></th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for b in bookings %}
+              <tr class="border-b border-emerald-100">
+                <td class="py-2 pr-3">{{ b.date }}</td>
+                <td class="py-2 pr-3">{{ b.start_time }}–{{ b.end_time }}</td>
+                <td class="py-2 pr-3">{{ b.slot_no }}</td>
+                <td class="py-2 pr-3 font-semibold">{{ b.name }}</td>
+                <td class="py-2 pr-3">{{ b.phone }}</td>
+                <td class="py-2 pr-3 font-mono text-xs">{{ b.reference_number }}</td>
+                <td class="py-2 pr-3">
+                  <form method="post" action="/admin/bookings/{{ b.booking_id }}/delete" onsubmit="return confirm('Cancel this booking?');">
+                    <button type="submit" class="px-2 py-1 rounded-lg bg-rose-100 hover:bg-rose-200 text-rose-700 text-xs font-bold">🗑️ Cancel</button>
+                  </form>
+                </td>
+              </tr>
+              {% else %}
+              <tr><td colspan="7" class="py-6 text-center text-emerald-700">No bookings found.</td></tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </body>
+</html>

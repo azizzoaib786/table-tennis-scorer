@@ -30,6 +30,10 @@ from .db import (
     put_registration, get_registration, list_registrations_by_tournament,
     list_all_registrations, update_registration_paid, delete_registration,
     find_registration_by_name, find_registration_by_its, put_registrations_transact,
+    create_practice_booking, get_practice_booking_by_reference,
+    list_all_practice_bookings, search_practice_bookings,
+    get_practice_slot_availability, delete_practice_booking_by_id,
+    PRACTICE_TIME_RANGES, PRACTICE_SLOTS_PER_HOUR,
 )
 from .logic import compute_state, player_name
 from .auth import hash_password, verify_password, create_session_token, verify_session_token
@@ -699,6 +703,97 @@ def profile_page(request: Request, user_id: str):
         "profile_user": profile_user,
         "stats": stats,
     })
+
+
+# ── Practice slot booking (standalone — separate from tournaments and
+# live scoring). Public link: no login required. ─────────────────────────────
+PRACTICE_MIN_DATE = "2026-10-06"
+
+
+@app.get("/booking", response_class=HTMLResponse)
+def booking_page(request: Request, ref: str = ""):
+    found = None
+    searched = False
+    if ref.strip():
+        searched = True
+        found = get_practice_booking_by_reference(ref)
+    return templates.TemplateResponse("booking.html", {
+        "request": request,
+        "min_date": PRACTICE_MIN_DATE,
+        "time_ranges": PRACTICE_TIME_RANGES,
+        "slots_per_hour": PRACTICE_SLOTS_PER_HOUR,
+        "ref_query": ref.strip(),
+        "searched": searched,
+        "found": found,
+    })
+
+
+@app.post("/booking", response_class=HTMLResponse)
+def booking_submit(request: Request, name: str = Form(...), phone: str = Form(...),
+                   date: str = Form(...), start_time: str = Form(...), end_time: str = Form(...)):
+    name = name.strip()
+    phone = phone.strip()
+    date = date.strip()
+    valid_range = (start_time, end_time) in PRACTICE_TIME_RANGES
+    ctx = {
+        "request": request,
+        "min_date": PRACTICE_MIN_DATE,
+        "time_ranges": PRACTICE_TIME_RANGES,
+        "slots_per_hour": PRACTICE_SLOTS_PER_HOUR,
+        "ref_query": "",
+        "searched": False,
+        "found": None,
+    }
+    if not name or not phone or not date or not valid_range:
+        return templates.TemplateResponse("booking.html", {
+            **ctx, "error": "Please fill in your name, number, date and a valid time slot.",
+        }, status_code=400)
+    if date < PRACTICE_MIN_DATE:
+        return templates.TemplateResponse("booking.html", {
+            **ctx, "error": f"Bookings are only available from {PRACTICE_MIN_DATE} onwards.",
+        }, status_code=400)
+
+    booking = create_practice_booking(date, start_time, end_time, name, phone)
+    if not booking:
+        return templates.TemplateResponse("booking.html", {
+            **ctx, "error": f"Sorry, {start_time}-{end_time} on {date} is fully booked. Please pick another slot.",
+        }, status_code=409)
+
+    return templates.TemplateResponse("booking.html", {
+        **ctx, "confirmed": booking,
+    })
+
+
+@app.get("/booking/availability")
+def booking_availability(date: str = ""):
+    date = date.strip()
+    if not date:
+        return JSONResponse({})
+    counts = get_practice_slot_availability(date)
+    return JSONResponse({
+        key: {"booked": count, "available": PRACTICE_SLOTS_PER_HOUR - count}
+        for key, count in counts.items()
+    })
+
+
+# ── Admin: practice bookings (view-only list + search, separate screen from
+# tournament/match admin) ─────────────────────────────────────────────────────
+@app.get("/admin/bookings", response_class=HTMLResponse)
+def admin_bookings(request: Request, q: str = ""):
+    admin = require_admin(request)
+    bookings = search_practice_bookings(q) if q.strip() else list_all_practice_bookings()
+    return templates.TemplateResponse("admin_bookings.html", {
+        "request": request, "user": admin,
+        "bookings": bookings,
+        "q": q,
+    })
+
+
+@app.post("/admin/bookings/{booking_id}/delete")
+def admin_bookings_delete(request: Request, booking_id: str):
+    require_admin(request)
+    delete_practice_booking_by_id(booking_id)
+    return RedirectResponse("/admin/bookings", status_code=303)
 
 
 # ── Admin ─────────────────────────────────────────────────────────────────────

@@ -1,5 +1,8 @@
 import os
+import uuid
+from datetime import datetime, timezone
 import boto3
+from botocore.exceptions import ClientError
 from boto3.dynamodb.conditions import Key, Attr
 from boto3.dynamodb.types import TypeSerializer
 from typing import Any, Dict, List, Optional
@@ -13,6 +16,7 @@ TOURNAMENTS_TABLE = os.getenv("TOURNAMENTS_TABLE", "tt_tournaments")
 SETTINGS_TABLE = os.getenv("SETTINGS_TABLE", "tt_settings")
 ROSTER_TABLE = os.getenv("ROSTER_TABLE", "tt_roster")
 REGISTRATIONS_TABLE = os.getenv("REGISTRATIONS_TABLE", "tt_registrations")
+PRACTICE_BOOKINGS_TABLE = os.getenv("PRACTICE_BOOKINGS_TABLE", "tt_practice_bookings")
 
 ddb = boto3.resource("dynamodb", region_name=AWS_REGION)
 matches = ddb.Table(MATCHES_TABLE)
@@ -22,6 +26,7 @@ tournaments = ddb.Table(TOURNAMENTS_TABLE)
 settings_tbl = ddb.Table(SETTINGS_TABLE)
 roster_tbl = ddb.Table(ROSTER_TABLE)
 registrations_tbl = ddb.Table(REGISTRATIONS_TABLE)
+practice_bookings_tbl = ddb.Table(PRACTICE_BOOKINGS_TABLE)
 
 
 # ── Matches ───────────────────────────────────────────────────────────────────
@@ -458,3 +463,113 @@ def find_registration_by_name(tournament_id: str, name: str) -> Optional[Dict[st
         if r.get("name", "").strip().lower() == key:
             return r
     return None
+
+
+# ── Practice slot bookings (standalone flow — separate from tournaments
+# and live scoring) ───────────────────────────────────────────────────────────
+# Capacity is enforced with a conditional put on a composite "slot_key"
+# (date#start-end#slot_no), so two people racing for the last open slot
+# can never both win it — DynamoDB rejects the loser's write atomically.
+PRACTICE_SLOTS_PER_HOUR = 6
+PRACTICE_TIME_RANGES = [("10:00", "11:00"), ("11:00", "12:00"), ("12:00", "13:00")]
+
+
+def _practice_slot_key(date: str, start_time: str, end_time: str, slot_no: int) -> str:
+    return f"{date}#{start_time}-{end_time}#{slot_no}"
+
+
+def create_practice_booking(date: str, start_time: str, end_time: str, name: str,
+                            phone: str) -> Optional[Dict[str, Any]]:
+    """Try to claim the first free slot (1..6) for this date/time range.
+    Returns the created booking dict, or None if the time range is full."""
+    booking_id = uuid.uuid4().hex
+    reference_number = ("PB" + booking_id[:6]).upper()
+    created_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+    for slot_no in range(1, PRACTICE_SLOTS_PER_HOUR + 1):
+        item = {
+            "slot_key": _practice_slot_key(date, start_time, end_time, slot_no),
+            "booking_id": booking_id,
+            "reference_number": reference_number,
+            "name": name,
+            "phone": phone,
+            "date": date,
+            "start_time": start_time,
+            "end_time": end_time,
+            "slot_no": slot_no,
+            "created_at": created_at,
+        }
+        try:
+            practice_bookings_tbl.put_item(
+                Item=item,
+                ConditionExpression="attribute_not_exists(slot_key)",
+            )
+            return item
+        except ClientError as e:
+            if e.response.get("Error", {}).get("Code") == "ConditionalCheckFailedException":
+                continue
+            raise
+    return None
+
+
+def get_practice_booking_by_reference(reference_number: str) -> Optional[Dict[str, Any]]:
+    key = (reference_number or "").strip().upper()
+    if not key:
+        return None
+    resp = practice_bookings_tbl.scan(
+        FilterExpression="reference_number = :r",
+        ExpressionAttributeValues={":r": key},
+    )
+    items = resp.get("Items", [])
+    return items[0] if items else None
+
+
+def list_all_practice_bookings() -> List[Dict[str, Any]]:
+    resp = practice_bookings_tbl.scan()
+    items = resp.get("Items", [])
+    items.sort(key=lambda x: (x.get("date", ""), x.get("start_time", ""), x.get("slot_no", 0)))
+    return items
+
+
+def search_practice_bookings(query: str) -> List[Dict[str, Any]]:
+    """Admin search across name/phone/reference number (in-memory filter —
+    booking volume for a single club's practice sessions is small)."""
+    q = (query or "").strip().lower()
+    if not q:
+        return list_all_practice_bookings()
+    return [
+        b for b in list_all_practice_bookings()
+        if q in b.get("name", "").strip().lower()
+        or q in b.get("phone", "").strip().lower()
+        or q in b.get("reference_number", "").strip().lower()
+    ]
+
+
+def get_practice_slot_availability(date: str) -> Dict[str, int]:
+    """Return {"10:00-11:00": booked_count, ...} for the given date."""
+    resp = practice_bookings_tbl.scan(
+        FilterExpression="#d = :d",
+        ExpressionAttributeNames={"#d": "date"},
+        ExpressionAttributeValues={":d": date},
+    )
+    items = resp.get("Items", [])
+    counts: Dict[str, int] = {f"{s}-{e}": 0 for s, e in PRACTICE_TIME_RANGES}
+    for b in items:
+        key = f"{b.get('start_time')}-{b.get('end_time')}"
+        if key in counts:
+            counts[key] += 1
+    return counts
+
+
+def delete_practice_booking(slot_key: str) -> None:
+    practice_bookings_tbl.delete_item(Key={"slot_key": slot_key})
+
+
+def delete_practice_booking_by_id(booking_id: str) -> None:
+    """Admin delete by booking_id (URL-safe), avoiding the '#' characters
+    in slot_key which don't survive cleanly as a URL path segment."""
+    resp = practice_bookings_tbl.scan(
+        FilterExpression="booking_id = :b",
+        ExpressionAttributeValues={":b": booking_id},
+    )
+    for item in resp.get("Items", []):
+        practice_bookings_tbl.delete_item(Key={"slot_key": item["slot_key"]})

@@ -24,6 +24,15 @@
           <a href="/" class="px-3 py-2 rounded-xl bg-gradient-to-r from-slate-500 to-slate-600 text-white font-bold shadow-md">← Home</a>
         </div>
 
+        <!-- Practice slot bookings — separate flow from tournaments/scoring -->
+        <div class="bg-white rounded-2xl border-2 border-emerald-200 p-4 mb-4 flex items-center justify-between flex-wrap gap-2">
+          <div>
+            <h2 class="text-lg font-bold text-emerald-900">🏓 Practice Slot Bookings</h2>
+            <p class="text-xs text-emerald-700">Public booking link, separate from tournament registration.</p>
+          </div>
+          <a href="/admin/bookings" class="px-3 py-2 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 text-white font-bold text-sm shadow-md">📋 View bookings</a>
+        </div>
+
         <!-- Scoring defaults (service change, points, best-of) -->
         {% include "partials/settings_form.html" %}
 

@@ -1,0 +1,134 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1"/>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <title>Practice Slot Booking — TT Scorer</title>
+    <link rel="manifest" href="/static/manifest.json" />
+    <meta name="theme-color" content="#059669" />
+  </head>
+  <body class="bg-gradient-to-br from-emerald-100 via-teal-100 to-sky-100 min-h-screen p-3 sm:p-4">
+    <div class="max-w-xl mx-auto">
+      {% include "partials/branding_header.html" %}
+
+      <div class="bg-white rounded-3xl shadow-2xl border-2 border-emerald-200 p-5 sm:p-6">
+        <div class="text-center mb-5">
+          <div class="text-4xl mb-1">🏓</div>
+          <h1 class="text-2xl font-bold text-emerald-900">Practice Slot Booking</h1>
+          <p class="text-emerald-700 text-sm font-medium">Book a 1-hour practice slot. No account needed.</p>
+        </div>
+
+        {% if error %}
+        <div class="mb-4 rounded-xl border-2 border-rose-300 bg-rose-50 text-rose-800 px-4 py-3 text-sm font-semibold">⚠️ {{ error }}</div>
+        {% endif %}
+
+        {% if confirmed %}
+        <div class="mb-5 rounded-2xl border-2 border-emerald-400 bg-emerald-50 p-5 text-center">
+          <div class="text-3xl mb-1">✅</div>
+          <p class="font-bold text-emerald-900 text-lg">Booking confirmed!</p>
+          <p class="text-sm text-emerald-800 mt-1">{{ confirmed.date }} · {{ confirmed.start_time }}–{{ confirmed.end_time }} · Table {{ confirmed.slot_no }}</p>
+          <div class="mt-3 inline-block rounded-xl bg-white border-2 border-emerald-300 px-4 py-2">
+            <p class="text-xs font-bold uppercase text-emerald-700">Your reference number</p>
+            <p class="text-2xl font-mono font-extrabold text-emerald-900 tracking-wide">{{ confirmed.reference_number }}</p>
+          </div>
+          <p class="text-xs text-emerald-700 mt-2">Save this reference number — use the search box below anytime to look up your booking.</p>
+        </div>
+        {% endif %}
+
+        <!-- Booking form -->
+        <form method="post" action="/booking" class="space-y-4" id="booking-form">
+          <div>
+            <label class="block text-sm font-bold text-emerald-900 mb-1">Your name</label>
+            <input type="text" name="name" required placeholder="Full name" class="w-full rounded-xl border-2 border-emerald-200 focus:border-emerald-400 px-4 py-3"/>
+          </div>
+          <div>
+            <label class="block text-sm font-bold text-emerald-900 mb-1">Your number</label>
+            <input type="tel" name="phone" required placeholder="e.g. +971568103175" class="w-full rounded-xl border-2 border-emerald-200 focus:border-emerald-400 px-4 py-3"/>
+          </div>
+          <div>
+            <label class="block text-sm font-bold text-emerald-900 mb-1">Date</label>
+            <input type="date" name="date" id="booking-date" required min="{{ min_date }}" value="{{ min_date }}" class="w-full rounded-xl border-2 border-emerald-200 focus:border-emerald-400 px-4 py-3"/>
+            <p class="text-xs text-emerald-700 mt-1">Bookings open from {{ min_date }} onwards.</p>
+          </div>
+          <div>
+            <label class="block text-sm font-bold text-emerald-900 mb-1">Time slot</label>
+            <div id="slot-options" class="space-y-2">
+              {% for start, end in time_ranges %}
+              <label class="flex items-center justify-between rounded-xl border-2 border-emerald-200 px-4 py-3 cursor-pointer hover:border-emerald-400">
+                <span class="flex items-center gap-2 font-semibold text-emerald-900">
+                  <input type="radio" name="time_range" value="{{ start }}-{{ end }}" required class="accent-emerald-600"/>
+                  {{ start }} – {{ end }}
+                </span>
+                <span class="text-xs font-bold text-emerald-700" data-slot="{{ start }}-{{ end }}">{{ slots_per_hour }}/{{ slots_per_hour }} available</span>
+              </label>
+              {% endfor %}
+            </div>
+          </div>
+          <input type="hidden" name="start_time" id="booking-start-time"/>
+          <input type="hidden" name="end_time" id="booking-end-time"/>
+          <button type="submit" class="w-full rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 text-white px-6 py-4 text-lg font-bold shadow-lg">
+            🏓 Book my slot
+          </button>
+        </form>
+      </div>
+
+      <!-- Find my booking (same screen/link) -->
+      <div class="mt-4 bg-white rounded-3xl shadow-2xl border-2 border-sky-200 p-5 sm:p-6">
+        <h2 class="text-lg font-bold text-sky-900 mb-3">🔎 Find my booking</h2>
+        <form method="get" action="/booking" class="flex gap-2">
+          <input type="text" name="ref" value="{{ ref_query }}" placeholder="Reference number e.g. PB4F2A1C" class="flex-1 rounded-xl border-2 border-sky-200 focus:border-sky-400 px-4 py-3 font-mono uppercase"/>
+          <button type="submit" class="rounded-xl bg-sky-600 hover:bg-sky-700 text-white px-5 py-3 font-bold shadow-md">Search</button>
+        </form>
+
+        {% if searched %}
+          {% if found %}
+          <div class="mt-4 rounded-2xl border-2 border-sky-300 bg-sky-50 p-4">
+            <p class="font-bold text-sky-900">{{ found.name }}</p>
+            <p class="text-sm text-sky-800">{{ found.date }} · {{ found.start_time }}–{{ found.end_time }} · Table {{ found.slot_no }}</p>
+            <p class="text-xs font-mono text-sky-700 mt-1">Ref: {{ found.reference_number }}</p>
+          </div>
+          {% else %}
+          <div class="mt-4 rounded-2xl border-2 border-rose-300 bg-rose-50 p-4 text-rose-800 text-sm font-semibold">
+            No booking found for that reference number.
+          </div>
+          {% endif %}
+        {% endif %}
+      </div>
+    </div>
+
+    <script>
+      const dateInput = document.getElementById('booking-date');
+      const slotLabels = document.querySelectorAll('#slot-options [data-slot]');
+      const radios = document.querySelectorAll('input[name="time_range"]');
+      const startField = document.getElementById('booking-start-time');
+      const endField = document.getElementById('booking-end-time');
+      const slotsPerHour = {{ slots_per_hour }};
+
+      async function refreshAvailability() {
+        const date = dateInput.value;
+        if (!date) return;
+        try {
+          const res = await fetch(`/booking/availability?date=${encodeURIComponent(date)}`);
+          const data = await res.json();
+          slotLabels.forEach((el) => {
+            const key = el.getAttribute('data-slot');
+            const info = data[key];
+            if (!info) { el.textContent = `${slotsPerHour}/${slotsPerHour} available`; return; }
+            el.textContent = `${info.available}/${slotsPerHour} available`;
+            el.classList.toggle('text-rose-600', info.available === 0);
+            el.classList.toggle('text-emerald-700', info.available > 0);
+          });
+        } catch (e) { /* availability is a nice-to-have; ignore failures */ }
+      }
+
+      radios.forEach((r) => r.addEventListener('change', () => {
+        const [s, e] = r.value.split('-');
+        startField.value = s;
+        endField.value = e;
+      }));
+      dateInput.addEventListener('change', refreshAvailability);
+      refreshAvailability();
+    </script>
+  </body>
+</html>

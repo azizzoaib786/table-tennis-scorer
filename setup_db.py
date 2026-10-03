@@ -88,6 +88,14 @@ def create_registrations_table():
     )
 
 
+def create_practice_bookings_table():
+    _create(
+        "tt_practice_bookings",
+        [{"AttributeName": "slot_key", "KeyType": "HASH"}],
+        [{"AttributeName": "slot_key", "AttributeType": "S"}],
+    )
+
+
 def seed_default_settings():
     settings_table = boto3.resource("dynamodb", region_name=AWS_REGION).Table("tt_settings")
     resp = settings_table.get_item(Key={"config_id": "global"})
@@ -175,6 +183,7 @@ if __name__ == "__main__":
     create_settings_table()
     create_roster_table()
     create_registrations_table()
+    create_practice_bookings_table()
     seed_default_settings()
     create_admin_user()
     print()
