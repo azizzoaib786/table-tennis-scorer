@@ -708,16 +708,19 @@ def profile_page(request: Request, user_id: str):
 # ── Practice slot booking (standalone — separate from tournaments and
 # live scoring). Public link: no login required. ─────────────────────────────
 PRACTICE_MIN_DATE = "2026-10-06"
-PRACTICE_PHONE_RE = re.compile(r"^\+\d{7,15}$")
+PRACTICE_PHONE_RE = re.compile(r"^\+\d{12,15}$")
 
 
 @app.get("/booking", response_class=HTMLResponse)
-def booking_page(request: Request, ref: str = ""):
+def booking_page(request: Request, ref: str = "", confirmed: str = ""):
     found = None
     searched = False
     if ref.strip():
         searched = True
         found = get_practice_booking_by_reference(ref)
+    # Post/Redirect/Get: a successful booking redirects here so a browser
+    # refresh re-runs this harmless GET instead of re-submitting the form.
+    confirmed_booking = get_practice_booking_by_reference(confirmed) if confirmed.strip() else None
     return templates.TemplateResponse("booking.html", {
         "request": request,
         "min_date": PRACTICE_MIN_DATE,
@@ -726,6 +729,7 @@ def booking_page(request: Request, ref: str = ""):
         "ref_query": ref.strip(),
         "searched": searched,
         "found": found,
+        "confirmed": confirmed_booking,
     })
 
 
@@ -764,9 +768,7 @@ def booking_submit(request: Request, name: str = Form(...), phone: str = Form(..
             **ctx, "error": f"Sorry, {start_time}-{end_time} on {date} is fully booked. Please pick another slot.",
         }, status_code=409)
 
-    return templates.TemplateResponse("booking.html", {
-        **ctx, "confirmed": booking,
-    })
+    return RedirectResponse(f"/booking?confirmed={booking['reference_number']}", status_code=303)
 
 
 @app.get("/booking/availability")
