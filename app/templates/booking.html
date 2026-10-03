@@ -37,7 +37,7 @@
         {% endif %}
 
         <!-- Booking form -->
-        {% if not allowed_dates %}
+        {% if not date_ranges %}
         <div class="rounded-2xl border-2 border-amber-300 bg-amber-50 p-5 text-center text-amber-900 font-semibold">
           Bookings are currently closed. Please check back later.
         </div>
@@ -54,9 +54,9 @@
           <div>
             <label class="block text-sm font-bold text-emerald-900 mb-1">Date</label>
             <input type="date" name="date" id="booking-date" required
-                   min="{{ allowed_dates[0] }}" max="{{ allowed_dates[-1] }}" value="{{ allowed_dates[0] }}"
+                   min="{{ date_min }}" max="{{ date_max }}" value="{{ date_min }}"
                    class="w-full rounded-xl border-2 border-emerald-200 focus:border-emerald-400 px-4 py-3 bg-white"/>
-            <p class="text-xs text-emerald-700 mt-1">Available date{{ 's' if allowed_dates|length > 1 else '' }}: {{ allowed_dates|join(', ') }}</p>
+            <p class="text-xs text-emerald-700 mt-1">Available: {% for r in date_ranges %}{{ r.start if r.start == r.end else r.start ~ ' to ' ~ r.end }}{{ ', ' if not loop.last }}{% endfor %}</p>
           </div>
           <div>
             <label class="block text-sm font-bold text-emerald-900 mb-1">Time slot</label>
@@ -105,7 +105,7 @@
       </div>
     </div>
 
-    {% if allowed_dates %}
+    {% if date_ranges %}
     <script>
       const dateInput = document.getElementById('booking-date');
       const slotLabels = document.querySelectorAll('#slot-options [data-slot]');
@@ -113,12 +113,16 @@
       const startField = document.getElementById('booking-start-time');
       const endField = document.getElementById('booking-end-time');
       const slotsPerHour = {{ slots_per_hour }};
-      const allowedDates = {{ allowed_dates|tojson }};
+      const dateRanges = {{ date_ranges|tojson }};
 
-      // min/max already grey out everything outside the range in the calendar;
-      // this also blocks any in-between dates if more than one date is ever opened.
+      // min/max already grey out everything outside the overall range in the
+      // calendar; this also blocks dates in gaps between separate open ranges
+      // by jumping to the next open date.
       function enforceAllowedDate() {
-        if (!allowedDates.includes(dateInput.value)) dateInput.value = allowedDates[0];
+        const v = dateInput.value;
+        if (dateRanges.some((r) => r.start <= v && v <= r.end)) return;
+        const next = dateRanges.find((r) => r.start > v);
+        dateInput.value = (next || dateRanges[0]).start;
       }
 
       async function refreshAvailability() {

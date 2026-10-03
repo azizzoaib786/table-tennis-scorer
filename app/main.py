@@ -33,7 +33,7 @@ from .db import (
     create_practice_booking, get_practice_booking_by_reference,
     list_all_practice_bookings, search_practice_bookings,
     get_practice_slot_availability, delete_practice_booking_by_id,
-    get_practice_allowed_dates, set_practice_allowed_dates,
+    get_practice_date_ranges, set_practice_date_ranges, is_practice_date_open,
     PRACTICE_TIME_RANGES, PRACTICE_SLOTS_PER_HOUR,
 )
 from .logic import compute_state, player_name
@@ -712,6 +712,16 @@ def profile_page(request: Request, user_id: str):
 PRACTICE_PHONE_RE = re.compile(r"^\+\d{12,15}$")
 
 
+def _practice_date_ctx() -> Dict[str, Any]:
+    """Template context describing which dates are open (ranges + overall bounds)."""
+    ranges = get_practice_date_ranges()
+    return {
+        "date_ranges": ranges,
+        "date_min": min((r["start"] for r in ranges), default=""),
+        "date_max": max((r["end"] for r in ranges), default=""),
+    }
+
+
 @app.get("/booking", response_class=HTMLResponse)
 def booking_page(request: Request, ref: str = "", confirmed: str = ""):
     found = None
@@ -724,7 +734,7 @@ def booking_page(request: Request, ref: str = "", confirmed: str = ""):
     confirmed_booking = get_practice_booking_by_reference(confirmed) if confirmed.strip() else None
     return templates.TemplateResponse("booking.html", {
         "request": request,
-        "allowed_dates": get_practice_allowed_dates(),
+        **_practice_date_ctx(),
         "time_ranges": PRACTICE_TIME_RANGES,
         "slots_per_hour": PRACTICE_SLOTS_PER_HOUR,
         "ref_query": ref.strip(),
@@ -741,10 +751,10 @@ def booking_submit(request: Request, name: str = Form(...), phone: str = Form(..
     phone = phone.strip()
     date = date.strip()
     valid_range = (start_time, end_time) in PRACTICE_TIME_RANGES
-    allowed_dates = get_practice_allowed_dates()
+    date_ctx = _practice_date_ctx()
     ctx = {
         "request": request,
-        "allowed_dates": allowed_dates,
+        **date_ctx,
         "time_ranges": PRACTICE_TIME_RANGES,
         "slots_per_hour": PRACTICE_SLOTS_PER_HOUR,
         "ref_query": "",
@@ -759,7 +769,7 @@ def booking_submit(request: Request, name: str = Form(...), phone: str = Form(..
         return templates.TemplateResponse("booking.html", {
             **ctx, "error": "Please enter a valid number with country code, e.g. +971568103175.",
         }, status_code=400)
-    if date not in allowed_dates:
+    if not is_practice_date_open(date, date_ctx["date_ranges"]):
         return templates.TemplateResponse("booking.html", {
             **ctx, "error": "Bookings are not open for that date. Please choose an available date.",
         }, status_code=400)
@@ -795,28 +805,34 @@ def admin_bookings(request: Request, q: str = "", dates_error: str = ""):
         "request": request, "user": admin,
         "bookings": bookings,
         "q": q,
-        "allowed_dates": get_practice_allowed_dates(),
+        "date_ranges": get_practice_date_ranges(),
         "dates_error": dates_error,
     })
 
 
 @app.post("/admin/bookings/dates/add")
-def admin_bookings_add_date(request: Request, date: str = Form(...)):
+def admin_bookings_add_range(request: Request, start: str = Form(...), end: str = Form("")):
     require_admin(request)
-    date = date.strip()
+    start = start.strip()
+    end = end.strip() or start   # leaving 'to' blank opens a single day
     try:
-        datetime.strptime(date, "%Y-%m-%d")
+        datetime.strptime(start, "%Y-%m-%d")
+        datetime.strptime(end, "%Y-%m-%d")
     except ValueError:
         return RedirectResponse("/admin/bookings?dates_error=Invalid+date", status_code=303)
-    set_practice_allowed_dates(get_practice_allowed_dates() + [date])
+    if end < start:
+        return RedirectResponse("/admin/bookings?dates_error=End+date+must+be+on+or+after+the+start+date", status_code=303)
+    set_practice_date_ranges(get_practice_date_ranges() + [{"start": start, "end": end}])
     return RedirectResponse("/admin/bookings", status_code=303)
 
 
 @app.post("/admin/bookings/dates/remove")
-def admin_bookings_remove_date(request: Request, date: str = Form(...)):
+def admin_bookings_remove_range(request: Request, start: str = Form(...), end: str = Form(...)):
     require_admin(request)
-    date = date.strip()
-    set_practice_allowed_dates([d for d in get_practice_allowed_dates() if d != date])
+    start, end = start.strip(), end.strip()
+    set_practice_date_ranges([
+        r for r in get_practice_date_ranges() if not (r["start"] == start and r["end"] == end)
+    ])
     return RedirectResponse("/admin/bookings", status_code=303)
 
 
