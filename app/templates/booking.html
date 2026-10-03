@@ -48,11 +48,10 @@
           </div>
           <div>
             <label class="block text-sm font-bold text-emerald-900 mb-1">Date</label>
-            <select name="date" id="booking-date" required class="w-full rounded-xl border-2 border-emerald-200 focus:border-emerald-400 px-4 py-3 bg-white">
-              {% for d in allowed_dates %}
-              <option value="{{ d }}">{{ d }}</option>
-              {% endfor %}
-            </select>
+            <input type="date" name="date" id="booking-date" required
+                   min="{{ allowed_dates[0] }}" max="{{ allowed_dates[-1] }}" value="{{ allowed_dates[0] }}"
+                   class="w-full rounded-xl border-2 border-emerald-200 focus:border-emerald-400 px-4 py-3 bg-white"/>
+            <p class="text-xs text-emerald-700 mt-1">Available date{{ 's' if allowed_dates|length > 1 else '' }}: {{ allowed_dates|join(', ') }}</p>
           </div>
           <div>
             <label class="block text-sm font-bold text-emerald-900 mb-1">Time slot</label>
@@ -107,6 +106,13 @@
       const startField = document.getElementById('booking-start-time');
       const endField = document.getElementById('booking-end-time');
       const slotsPerHour = {{ slots_per_hour }};
+      const allowedDates = {{ allowed_dates|tojson }};
+
+      // min/max already grey out everything outside the range in the calendar;
+      // this also blocks any in-between dates if more than one date is ever opened.
+      function enforceAllowedDate() {
+        if (!allowedDates.includes(dateInput.value)) dateInput.value = allowedDates[0];
+      }
 
       async function refreshAvailability() {
         const date = dateInput.value;
@@ -130,7 +136,7 @@
         startField.value = s;
         endField.value = e;
       }));
-      dateInput.addEventListener('change', refreshAvailability);
+      dateInput.addEventListener('change', () => { enforceAllowedDate(); refreshAvailability(); });
       refreshAvailability();
     </script>
   </body>
