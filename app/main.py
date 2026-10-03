@@ -708,6 +708,7 @@ def profile_page(request: Request, user_id: str):
 # ── Practice slot booking (standalone — separate from tournaments and
 # live scoring). Public link: no login required. ─────────────────────────────
 PRACTICE_MIN_DATE = "2026-10-06"
+PRACTICE_PHONE_RE = re.compile(r"^\+\d{7,15}$")
 
 
 @app.get("/booking", response_class=HTMLResponse)
@@ -747,6 +748,10 @@ def booking_submit(request: Request, name: str = Form(...), phone: str = Form(..
     if not name or not phone or not date or not valid_range:
         return templates.TemplateResponse("booking.html", {
             **ctx, "error": "Please fill in your name, number, date and a valid time slot.",
+        }, status_code=400)
+    if not PRACTICE_PHONE_RE.match(phone):
+        return templates.TemplateResponse("booking.html", {
+            **ctx, "error": "Please enter a valid number with country code, e.g. +971568103175.",
         }, status_code=400)
     if date < PRACTICE_MIN_DATE:
         return templates.TemplateResponse("booking.html", {
