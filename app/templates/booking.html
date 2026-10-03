@@ -48,8 +48,11 @@
           </div>
           <div>
             <label class="block text-sm font-bold text-emerald-900 mb-1">Date</label>
-            <input type="date" name="date" id="booking-date" required min="{{ min_date }}" value="{{ min_date }}" class="w-full rounded-xl border-2 border-emerald-200 focus:border-emerald-400 px-4 py-3"/>
-            <p class="text-xs text-emerald-700 mt-1">Bookings open from {{ min_date }} onwards.</p>
+            <select name="date" id="booking-date" required class="w-full rounded-xl border-2 border-emerald-200 focus:border-emerald-400 px-4 py-3 bg-white">
+              {% for d in allowed_dates %}
+              <option value="{{ d }}">{{ d }}</option>
+              {% endfor %}
+            </select>
           </div>
           <div>
             <label class="block text-sm font-bold text-emerald-900 mb-1">Time slot</label>

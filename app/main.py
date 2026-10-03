@@ -707,7 +707,8 @@ def profile_page(request: Request, user_id: str):
 
 # ── Practice slot booking (standalone — separate from tournaments and
 # live scoring). Public link: no login required. ─────────────────────────────
-PRACTICE_MIN_DATE = "2026-10-06"
+# Only these dates are open for booking. Add more YYYY-MM-DD strings to open them.
+PRACTICE_ALLOWED_DATES = ["2026-10-11"]
 PRACTICE_PHONE_RE = re.compile(r"^\+\d{12,15}$")
 
 
@@ -723,7 +724,7 @@ def booking_page(request: Request, ref: str = "", confirmed: str = ""):
     confirmed_booking = get_practice_booking_by_reference(confirmed) if confirmed.strip() else None
     return templates.TemplateResponse("booking.html", {
         "request": request,
-        "min_date": PRACTICE_MIN_DATE,
+        "allowed_dates": PRACTICE_ALLOWED_DATES,
         "time_ranges": PRACTICE_TIME_RANGES,
         "slots_per_hour": PRACTICE_SLOTS_PER_HOUR,
         "ref_query": ref.strip(),
@@ -742,7 +743,7 @@ def booking_submit(request: Request, name: str = Form(...), phone: str = Form(..
     valid_range = (start_time, end_time) in PRACTICE_TIME_RANGES
     ctx = {
         "request": request,
-        "min_date": PRACTICE_MIN_DATE,
+        "allowed_dates": PRACTICE_ALLOWED_DATES,
         "time_ranges": PRACTICE_TIME_RANGES,
         "slots_per_hour": PRACTICE_SLOTS_PER_HOUR,
         "ref_query": "",
@@ -757,9 +758,9 @@ def booking_submit(request: Request, name: str = Form(...), phone: str = Form(..
         return templates.TemplateResponse("booking.html", {
             **ctx, "error": "Please enter a valid number with country code, e.g. +971568103175.",
         }, status_code=400)
-    if date < PRACTICE_MIN_DATE:
+    if date not in PRACTICE_ALLOWED_DATES:
         return templates.TemplateResponse("booking.html", {
-            **ctx, "error": f"Bookings are only available from {PRACTICE_MIN_DATE} onwards.",
+            **ctx, "error": "Bookings are not open for that date. Please choose an available date.",
         }, status_code=400)
 
     booking = create_practice_booking(date, start_time, end_time, name, phone)
