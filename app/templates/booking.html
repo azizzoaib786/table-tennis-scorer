@@ -37,6 +37,11 @@
         {% endif %}
 
         <!-- Booking form -->
+        {% if not allowed_dates %}
+        <div class="rounded-2xl border-2 border-amber-300 bg-amber-50 p-5 text-center text-amber-900 font-semibold">
+          Bookings are currently closed. Please check back later.
+        </div>
+        {% else %}
         <form method="post" action="/booking" class="space-y-4" id="booking-form">
           <div>
             <label class="block text-sm font-bold text-emerald-900 mb-1">Your name</label>
@@ -73,6 +78,7 @@
             🏓 Book my slot
           </button>
         </form>
+        {% endif %}
       </div>
 
       <!-- Find my booking (same screen/link) -->
@@ -99,6 +105,7 @@
       </div>
     </div>
 
+    {% if allowed_dates %}
     <script>
       const dateInput = document.getElementById('booking-date');
       const slotLabels = document.querySelectorAll('#slot-options [data-slot]');
@@ -139,5 +146,6 @@
       dateInput.addEventListener('change', () => { enforceAllowedDate(); refreshAvailability(); });
       refreshAvailability();
     </script>
+    {% endif %}
   </body>
 </html>

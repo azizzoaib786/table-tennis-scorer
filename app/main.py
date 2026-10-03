@@ -33,6 +33,7 @@ from .db import (
     create_practice_booking, get_practice_booking_by_reference,
     list_all_practice_bookings, search_practice_bookings,
     get_practice_slot_availability, delete_practice_booking_by_id,
+    get_practice_allowed_dates, set_practice_allowed_dates,
     PRACTICE_TIME_RANGES, PRACTICE_SLOTS_PER_HOUR,
 )
 from .logic import compute_state, player_name
@@ -707,8 +708,7 @@ def profile_page(request: Request, user_id: str):
 
 # ── Practice slot booking (standalone — separate from tournaments and
 # live scoring). Public link: no login required. ─────────────────────────────
-# Only these dates are open for booking. Add more YYYY-MM-DD strings to open them.
-PRACTICE_ALLOWED_DATES = ["2026-10-11"]
+# The open dates are managed by admins at /admin/bookings (see db.py).
 PRACTICE_PHONE_RE = re.compile(r"^\+\d{12,15}$")
 
 
@@ -724,7 +724,7 @@ def booking_page(request: Request, ref: str = "", confirmed: str = ""):
     confirmed_booking = get_practice_booking_by_reference(confirmed) if confirmed.strip() else None
     return templates.TemplateResponse("booking.html", {
         "request": request,
-        "allowed_dates": PRACTICE_ALLOWED_DATES,
+        "allowed_dates": get_practice_allowed_dates(),
         "time_ranges": PRACTICE_TIME_RANGES,
         "slots_per_hour": PRACTICE_SLOTS_PER_HOUR,
         "ref_query": ref.strip(),
@@ -741,9 +741,10 @@ def booking_submit(request: Request, name: str = Form(...), phone: str = Form(..
     phone = phone.strip()
     date = date.strip()
     valid_range = (start_time, end_time) in PRACTICE_TIME_RANGES
+    allowed_dates = get_practice_allowed_dates()
     ctx = {
         "request": request,
-        "allowed_dates": PRACTICE_ALLOWED_DATES,
+        "allowed_dates": allowed_dates,
         "time_ranges": PRACTICE_TIME_RANGES,
         "slots_per_hour": PRACTICE_SLOTS_PER_HOUR,
         "ref_query": "",
@@ -758,7 +759,7 @@ def booking_submit(request: Request, name: str = Form(...), phone: str = Form(..
         return templates.TemplateResponse("booking.html", {
             **ctx, "error": "Please enter a valid number with country code, e.g. +971568103175.",
         }, status_code=400)
-    if date not in PRACTICE_ALLOWED_DATES:
+    if date not in allowed_dates:
         return templates.TemplateResponse("booking.html", {
             **ctx, "error": "Bookings are not open for that date. Please choose an available date.",
         }, status_code=400)
@@ -787,14 +788,36 @@ def booking_availability(date: str = ""):
 # ── Admin: practice bookings (view-only list + search, separate screen from
 # tournament/match admin) ─────────────────────────────────────────────────────
 @app.get("/admin/bookings", response_class=HTMLResponse)
-def admin_bookings(request: Request, q: str = ""):
+def admin_bookings(request: Request, q: str = "", dates_error: str = ""):
     admin = require_admin(request)
     bookings = search_practice_bookings(q) if q.strip() else list_all_practice_bookings()
     return templates.TemplateResponse("admin_bookings.html", {
         "request": request, "user": admin,
         "bookings": bookings,
         "q": q,
+        "allowed_dates": get_practice_allowed_dates(),
+        "dates_error": dates_error,
     })
+
+
+@app.post("/admin/bookings/dates/add")
+def admin_bookings_add_date(request: Request, date: str = Form(...)):
+    require_admin(request)
+    date = date.strip()
+    try:
+        datetime.strptime(date, "%Y-%m-%d")
+    except ValueError:
+        return RedirectResponse("/admin/bookings?dates_error=Invalid+date", status_code=303)
+    set_practice_allowed_dates(get_practice_allowed_dates() + [date])
+    return RedirectResponse("/admin/bookings", status_code=303)
+
+
+@app.post("/admin/bookings/dates/remove")
+def admin_bookings_remove_date(request: Request, date: str = Form(...)):
+    require_admin(request)
+    date = date.strip()
+    set_practice_allowed_dates([d for d in get_practice_allowed_dates() if d != date])
+    return RedirectResponse("/admin/bookings", status_code=303)
 
 
 @app.post("/admin/bookings/{booking_id}/delete")

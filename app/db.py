@@ -573,3 +573,24 @@ def delete_practice_booking_by_id(booking_id: str) -> None:
     )
     for item in resp.get("Items", []):
         practice_bookings_tbl.delete_item(Key={"slot_key": item["slot_key"]})
+
+
+# Admin-managed list of dates open for practice booking. Stored as its own row
+# in the settings table (config_id = "practice_booking") so it stays separate
+# from the scoring defaults. Until an admin saves a list, the default applies.
+PRACTICE_CONFIG_ID = "practice_booking"
+DEFAULT_PRACTICE_ALLOWED_DATES = ["2026-10-11"]
+
+
+def get_practice_allowed_dates() -> List[str]:
+    item = settings_tbl.get_item(Key={"config_id": PRACTICE_CONFIG_ID}).get("Item")
+    if not item or "allowed_dates" not in item:
+        return list(DEFAULT_PRACTICE_ALLOWED_DATES)
+    return sorted({str(d) for d in item["allowed_dates"]})
+
+
+def set_practice_allowed_dates(dates: List[str]) -> None:
+    settings_tbl.put_item(Item={
+        "config_id": PRACTICE_CONFIG_ID,
+        "allowed_dates": sorted({str(d) for d in dates}),
+    })
