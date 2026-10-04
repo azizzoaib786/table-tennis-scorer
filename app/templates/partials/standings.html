@@ -1,0 +1,49 @@
+{# Expects `standings` = list of pool standings (see main._pool_standings). #}
+{% if standings %}
+<div class="mt-4 bg-white rounded-2xl border-2 border-fuchsia-200 shadow-lg p-4">
+  <h2 class="text-lg font-bold text-fuchsia-900">📊 Group standings</h2>
+  <p class="text-[11px] text-fuchsia-800 mb-3">
+    Ranked by wins, then NRR (net rally-point difference). Top {{ standings[0].qualify }} of each group qualify.
+  </p>
+  <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+    {% for g in standings %}
+    <div class="rounded-xl border-2 border-fuchsia-100 overflow-hidden">
+      <div class="flex items-center justify-between bg-fuchsia-50 px-3 py-2">
+        <span class="font-bold text-fuchsia-900">{{ g.name }}</span>
+        <span class="text-[10px] font-bold px-2 py-0.5 rounded-full {% if g.complete %}bg-emerald-100 text-emerald-700 border border-emerald-300{% else %}bg-slate-100 text-slate-600 border border-slate-200{% endif %}">
+          {% if g.complete %}FINAL{% else %}{{ g.matches_played }}/{{ g.matches_total }} played{% endif %}
+        </span>
+      </div>
+      <table class="w-full text-sm">
+        <thead>
+          <tr class="text-[10px] uppercase text-slate-500 text-right">
+            <th class="px-2 py-1 text-left">#</th>
+            <th class="px-2 py-1 text-left">Team</th>
+            <th class="px-1 py-1">P</th>
+            <th class="px-1 py-1">W</th>
+            <th class="px-1 py-1">L</th>
+            <th class="px-1 py-1">PF</th>
+            <th class="px-1 py-1">PA</th>
+            <th class="px-2 py-1">NRR</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for r in g.rows %}
+          <tr class="border-t border-fuchsia-100 text-right {% if r.qualified %}bg-emerald-50 font-semibold{% endif %}">
+            <td class="px-2 py-1 text-left text-slate-500">{{ r.rank }}</td>
+            <td class="px-2 py-1 text-left text-slate-900">{{ r.label }}{% if r.qualified %} <span class="text-[10px] text-emerald-700 font-bold">Q</span>{% endif %}</td>
+            <td class="px-1 py-1">{{ r.played }}</td>
+            <td class="px-1 py-1">{{ r.wins }}</td>
+            <td class="px-1 py-1">{{ r.losses }}</td>
+            <td class="px-1 py-1">{{ r.pf }}</td>
+            <td class="px-1 py-1">{{ r.pa }}</td>
+            <td class="px-2 py-1 font-mono {% if r.nrr > 0 %}text-emerald-700{% elif r.nrr < 0 %}text-rose-600{% endif %}">{{ '%+d' % r.nrr }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+{% endif %}

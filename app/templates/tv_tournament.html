@@ -1,0 +1,98 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1"/>
+    <title>{{ tournament.name }} — TV Board</title>
+    <style>
+      * { box-sizing: border-box; margin: 0; padding: 0; }
+      html, body { height: 100%; background: #020617; color: #f1f5f9;
+                   font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; overflow: hidden; }
+      #app { height: 100vh; display: flex; flex-direction: column; padding: 1vmin; gap: 1vmin; }
+      header { display: flex; justify-content: space-between; align-items: center; padding: 0 1vmin;
+               font-size: clamp(14px, 2.4vmin, 32px); font-weight: 800; color: #6ee7b7; }
+      header small { font-weight: 600; color: #94a3b8; font-size: .65em; }
+      #board { flex: 1; min-height: 0; display: grid; gap: 1vmin;
+               grid-template-columns: repeat({{ 3 if table_board|length > 4 else 2 }}, 1fr);
+               grid-auto-rows: 1fr; }
+      @media (orientation: portrait) { #board { grid-template-columns: repeat(2, 1fr); } }
+      .tile { background: #0f172a; border: .4vmin solid #334155; border-radius: 1.6vmin; padding: 1.2vmin 1.6vmin;
+              display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
+      .tile.live { border-color: #38bdf8; background: #082f49; }
+      .head { display: flex; justify-content: space-between; align-items: center; font-weight: 900;
+              font-size: clamp(14px, 3vmin, 42px); }
+      .badge { font-size: .55em; padding: .15em .6em; border-radius: 999px; background: #334155; color: #cbd5e1; font-weight: 800; }
+      .live .badge { background: #ef4444; color: #fff; animation: pulse 1.4s infinite; }
+      .deuce { background: #f59e0b !important; color: #111 !important; animation: none !important; }
+      @keyframes pulse { 50% { opacity: .55; } }
+      .round { font-size: clamp(10px, 1.7vmin, 24px); color: #7dd3fc; font-weight: 700; text-transform: uppercase; margin-top: .3vmin; }
+      .side { display: flex; justify-content: space-between; align-items: center; gap: 1vmin; flex: 1; min-height: 0; }
+      .side + .side { border-top: .2vmin solid #1e3a5f; }
+      .name { font-size: clamp(14px, 3.2vmin, 46px); font-weight: 800; line-height: 1.1; overflow: hidden;
+              display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+      .score { font-size: clamp(36px, 10vmin, 150px); font-weight: 900; font-variant-numeric: tabular-nums; line-height: 1; color: #fff; }
+      .games { text-align: right; font-size: clamp(11px, 2vmin, 28px); color: #7dd3fc; font-weight: 800; }
+      .muted { color: #94a3b8; font-size: clamp(11px, 2vmin, 28px); font-weight: 600; line-height: 1.3; }
+      .next b { color: #e2e8f0; }
+      .free { flex: 1; display: flex; flex-direction: column; justify-content: center; gap: .6vmin; }
+      .last { color: #fbbf24; font-size: clamp(10px, 1.7vmin, 24px); font-weight: 700; margin-top: .5vmin;
+              white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    </style>
+  </head>
+  <body>
+    {% macro names(m, s) -%}
+      {%- if m.match_type == 'doubles' -%}{{ m['%s_name' % s] }} / {{ m['%s2_name' % s] }}{%- else -%}{{ m['%s_name' % s] }}{%- endif -%}
+    {%- endmacro %}
+    <div id="app">
+      <header>
+        <span>🏆 {{ tournament.name }}</span>
+        <small>Bo{{ tournament.best_of }} • to {{ tournament.points_to_win }} • auto-refresh 10s</small>
+      </header>
+      <div id="board">
+        {% for tb in table_board %}
+        {% set m = tb.live[0] if tb.live else none %}
+        <div class="tile {{ 'live' if m else '' }}">
+          <div class="head">
+            <span>Table {{ tb.table }}</span>
+            {% if m %}<span class="badge {{ 'deuce' if m.is_deuce else '' }}">{{ 'DEUCE' if m.is_deuce else 'LIVE' }}</span>
+            {% else %}<span class="badge">FREE</span>{% endif %}
+          </div>
+          {% if m %}
+          <div class="round">{{ m.round_name }}{% if m.is_deciding_game %} • Deciding game{% endif %} • Game {{ m.current_game_num }}</div>
+          <div class="side"><div class="name">{{ names(m, 'a') }}</div><div class="score">{{ m.a_score }}</div></div>
+          <div class="side"><div class="name">{{ names(m, 'b') }}</div><div class="score">{{ m.b_score }}</div></div>
+          <div class="games">Games {{ m.a_games }} – {{ m.b_games }}</div>
+          {% elif tb.next %}
+          <div class="free">
+            <div class="muted">NEXT UP</div>
+            {% for n in tb.next %}
+            <div class="muted next"><b>{{ names(n, 'a') }}</b> vs <b>{{ names(n, 'b') }}</b><br/>{{ n.round_name }}</div>
+            {% endfor %}
+          </div>
+          {% else %}
+          <div class="free"><div class="muted">No matches queued</div></div>
+          {% endif %}
+          {% if m and tb.next %}
+          <div class="muted next" style="margin-top:.5vmin">Next: <b>{{ names(tb.next[0], 'a') }}</b> vs <b>{{ names(tb.next[0], 'b') }}</b></div>
+          {% endif %}
+          {% if tb.last %}
+          <div class="last">✅ {{ winner_slot_label(tournament, tb.last) or tb.last.winner_name }}{% if tb.last.final_a is not none %} ({{ tb.last.final_a }}–{{ tb.last.final_b }}){% endif %}</div>
+          {% endif %}
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+    <script>
+      // Refresh in place (no page flash) every 10s; full reload if the fetch fails repeatedly.
+      let fails = 0;
+      setInterval(async () => {
+        try {
+          const r = await fetch(location.href, { cache: "no-store" });
+          const doc = new DOMParser().parseFromString(await r.text(), "text/html");
+          document.getElementById("board").innerHTML = doc.getElementById("board").innerHTML;
+          fails = 0;
+        } catch (e) { if (++fails >= 3) location.reload(); }
+      }, 10000);
+    </script>
+  </body>
+</html>

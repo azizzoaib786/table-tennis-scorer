@@ -1,6 +1,6 @@
 import uuid
 from datetime import datetime, timezone, timedelta
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 import hashlib
 import io
 import os
@@ -167,7 +167,14 @@ def _advancing_participants(tournament: dict, round_num: int) -> list:
     prev = next((r for r in rounds if int(r.get("round_num", 0)) == int(round_num) - 1), None)
     if not prev:
         return participants
-    if prev.get("stage_type") in ("pool", "plate", "custom"):
+    if prev.get("stage_type") == "pool":
+        # Group stage -> knockout: once every group is fully played, only the
+        # qualifiers (top N per group by wins, then NRR) are selectable.
+        qualified = _qualified_participant_ids(tournament, int(round_num))
+        if qualified:
+            return [p for p in participants if p.get("id") in qualified]
+        return participants
+    if prev.get("stage_type") in ("plate", "custom"):
         return participants
     advancing_ids = set()
     for m in prev.get("matches", []) or []:
@@ -188,6 +195,165 @@ def _advancing_participants(tournament: dict, round_num: int) -> list:
 
 
 templates.env.globals["advancing_participants"] = _advancing_participants
+
+
+# ── Group standings (wins, then NRR) ──────────────────────────────────────────
+def _tournament_num_tables(t: Dict[str, Any]) -> int:
+    try:
+        n = int(t.get("num_tables") or 0)
+    except (TypeError, ValueError):
+        n = 0
+    if n < 1:
+        n = int(get_settings().get("default_num_tables", 6))
+    return max(1, n)
+
+
+def _tournament_qualify_per_group(t: Dict[str, Any]) -> int:
+    try:
+        n = int(t.get("qualify_per_group") or 0)
+    except (TypeError, ValueError):
+        n = 0
+    if n < 1:
+        n = int(get_settings().get("default_qualify_per_group", 4))
+    return max(1, n)
+
+
+def _slot_points(slot: Dict[str, Any]) -> Optional[Tuple[int, int]]:
+    """Total rally points (side A, side B) of a decided slot. Uses the values
+    cached on the slot at finalization; falls back to replaying the match for
+    slots finished before points were cached."""
+    if slot.get("a_points") is not None and slot.get("b_points") is not None:
+        return int(slot["a_points"]), int(slot["b_points"])
+    mid = slot.get("match_id")
+    if not mid or slot.get("winner") not in ("A", "B"):
+        return None
+    m = get_match(mid)
+    if not m:
+        return None
+    st = compute_state(m, list_events(mid))
+    games = st.get("games") or []
+    return (sum(int(g["a"]) for g in games), sum(int(g["b"]) for g in games))
+
+
+def _side_label(t: Dict[str, Any], slot: Dict[str, Any], side: str) -> Tuple[str, List[str]]:
+    """(display label, member participant ids) for side 'a' or 'b' of a slot."""
+    pid = slot.get(f"{side}_id")
+    pid2 = slot.get(f"{side}2_id")
+    n1 = (slot.get(f"{side}_name") or "").strip()
+    n2 = (slot.get(f"{side}2_name") or "").strip()
+    if slot.get("match_type") == "doubles" and pid2:
+        by_id = {p.get("id"): p for p in (t.get("participants") or [])}
+        team = ((by_id.get(pid) or {}).get("team_name")
+                or (by_id.get(pid2) or {}).get("team_name") or "").strip()
+        return (team or f"{n1} & {n2}", [pid, pid2])
+    return (n1, [pid])
+
+
+def _pool_standings(t: Dict[str, Any], rnd: Dict[str, Any]) -> Dict[str, Any]:
+    """Standings of one pool round. Rank = wins desc, NRR desc, points-for
+    desc, name. NRR is the cumulative point difference over the group matches
+    (winner +margin, loser -margin). Top `qualify_per_group` are flagged."""
+    qualify = _tournament_qualify_per_group(t)
+    rows: Dict[Any, Dict[str, Any]] = {}
+
+    def ensure(slot: Dict[str, Any], side: str) -> Optional[Dict[str, Any]]:
+        key = slot.get(f"{side}_id")
+        if not key:
+            return None
+        if key not in rows:
+            label, members = _side_label(t, slot, side)
+            rows[key] = {"key": key, "label": label, "members": members,
+                         "played": 0, "wins": 0, "losses": 0, "pf": 0, "pa": 0}
+        return rows[key]
+
+    complete = True
+    matches = rnd.get("matches") or []
+    for slot in matches:
+        ra = ensure(slot, "a")
+        rb = ensure(slot, "b")
+        winner = slot.get("winner")
+        if winner not in ("A", "B") or not ra or not rb:
+            complete = False
+            continue
+        a_pts, b_pts = _slot_points(slot) or (0, 0)
+        ra["played"] += 1
+        rb["played"] += 1
+        ra["pf"] += a_pts
+        ra["pa"] += b_pts
+        rb["pf"] += b_pts
+        rb["pa"] += a_pts
+        win_row, lose_row = (ra, rb) if winner == "A" else (rb, ra)
+        win_row["wins"] += 1
+        lose_row["losses"] += 1
+
+    ordered = list(rows.values())
+    for r in ordered:
+        r["nrr"] = r["pf"] - r["pa"]
+    ordered.sort(key=lambda r: (-r["wins"], -r["nrr"], -r["pf"], r["label"].lower()))
+    for i, r in enumerate(ordered, start=1):
+        r["rank"] = i
+        r["qualified"] = i <= qualify
+    return {
+        "round_num": int(rnd.get("round_num", 0)),
+        "name": rnd.get("name", ""),
+        "rows": ordered,
+        "complete": bool(matches) and complete,
+        "qualify": qualify,
+        "matches_total": len(matches),
+        "matches_played": sum(1 for s in matches if s.get("winner") in ("A", "B")),
+    }
+
+
+def _all_pool_standings(t: Dict[str, Any]) -> List[Dict[str, Any]]:
+    return [_pool_standings(t, r) for r in (t.get("rounds") or [])
+            if r.get("stage_type") == "pool"]
+
+
+templates.env.globals["pool_standings"] = _all_pool_standings
+
+
+def _qualified_participant_ids(t: Dict[str, Any], before_round: int) -> Optional[set]:
+    """Participant ids of all group qualifiers, or None unless every pool round
+    before `before_round` is completely played."""
+    pools = [r for r in (t.get("rounds") or [])
+             if r.get("stage_type") == "pool" and int(r.get("round_num", 0)) < before_round]
+    if not pools:
+        return None
+    ids: set = set()
+    for r in pools:
+        st = _pool_standings(t, r)
+        if not st["complete"]:
+            return None
+        for row in st["rows"]:
+            if row["qualified"]:
+                ids.update(x for x in row["members"] if x)
+    return ids or None
+
+
+def _build_table_board(t: Dict[str, Any], rounds_view: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Per-table view: live match(es), the next pending matches, last result."""
+    tables: Dict[int, Dict[str, Any]] = {
+        i: {"table": i, "live": [], "next": [], "last": None}
+        for i in range(1, _tournament_num_tables(t) + 1)
+    }
+    for r in rounds_view:
+        for m in r.get("matches", []):
+            try:
+                tn = int(m.get("table_number") or 0)
+            except (TypeError, ValueError):
+                tn = 0
+            if tn < 1:
+                continue
+            entry = tables.setdefault(tn, {"table": tn, "live": [], "next": [], "last": None})
+            if m["status"] == "live":
+                entry["live"].append(m)
+            elif m["status"] == "finished":
+                entry["last"] = m
+            else:
+                entry["next"].append(m)
+    for entry in tables.values():
+        entry["next"] = entry["next"][:2]
+    return [tables[k] for k in sorted(tables)]
 
 
 def _winning_side_label(match: Dict[str, Any], tournament: Optional[Dict[str, Any]],
@@ -933,8 +1099,12 @@ async def admin_update_settings(request: Request,
                                  default_match_type: str = Form("singles"),
                                  deciding_side_change_at: int = Form(5),
                                  hard_cap_enabled: str = Form(""),
-                                 hard_cap_at: int = Form(15)):
+                                 hard_cap_at: int = Form(15),
+                                 default_num_tables: int = Form(6),
+                                 default_qualify_per_group: int = Form(4)):
     require_admin(request)
+    if default_num_tables < 1 or default_qualify_per_group < 1:
+        raise HTTPException(400, "tables and qualifiers must be at least 1")
     if default_best_of not in (1, 3, 5, 7):
         raise HTTPException(400, "default_best_of must be 1, 3, 5, or 7")
     if default_points_to_win < 5:
@@ -956,6 +1126,8 @@ async def admin_update_settings(request: Request,
         "deciding_side_change_at": int(deciding_side_change_at),
         "hard_cap_enabled": hard_cap_enabled in ("on", "true", "1", "yes"),
         "hard_cap_at": int(hard_cap_at),
+        "default_num_tables": int(default_num_tables),
+        "default_qualify_per_group": int(default_qualify_per_group),
     })
     return templates.TemplateResponse("partials/settings_form.html", {
         "request": request,
@@ -1387,6 +1559,9 @@ def _finalize_stats_if_needed(match: dict, state: dict) -> None:
                         if slot.get("match_id") == match["match_id"]:
                             slot["winner"] = state["match_winner"]
                             slot["winner_name"] = _winning_side_label(match, t, state["match_winner"])
+                            games = state.get("games") or []
+                            slot["a_points"] = sum(int(g["a"]) for g in games)
+                            slot["b_points"] = sum(int(g["b"]) for g in games)
                             break
             update_tournament(tid, "SET rounds = :r", {":r": rounds})
 
@@ -1576,6 +1751,8 @@ async def create_tournament(request: Request,
         "points_to_win": int(points_to_win) or int(cfg["default_points_to_win"]),
         "service_interval": int(service_interval) or int(cfg["service_interval"]),
         "deuce_interval": int(deuce_interval) or int(cfg["deuce_interval"]),
+        "num_tables": int(cfg["default_num_tables"]),
+        "qualify_per_group": int(cfg["default_qualify_per_group"]),
         "user_id": user["user_id"],
         "scorer_ids": scorer_ids,
         "created_at": now_ts(),
@@ -3029,6 +3206,10 @@ def _build_rounds_view(t: Dict[str, Any]) -> List[Dict[str, Any]]:
                 "a2_name": pair.get("a2_name", ""),
                 "b2_name": pair.get("b2_name", ""),
                 "match_id": mid,
+                "round_num": int(r.get("round_num", 0)),
+                "round_name": r.get("name", ""),
+                "table_number": int(pair.get("table_number") or 0),
+                "final_a": None, "final_b": None,
                 "winner": pair.get("winner", ""),
                 "winner_name": pair.get("winner_name", ""),
                 "status": "pending",
@@ -3051,13 +3232,55 @@ def _build_rounds_view(t: Dict[str, Any]) -> List[Dict[str, Any]]:
                     row["is_deuce"] = bool(st.get("is_deuce"))
                     row["is_deciding_game"] = bool(st.get("is_deciding_game"))
                     row["status"] = "finished" if st.get("match_winner") else "live"
+                    if st.get("match_winner"):
+                        games = st.get("games") or []
+                        row["final_a"] = sum(int(g["a"]) for g in games)
+                        row["final_b"] = sum(int(g["b"]) for g in games)
             matches_view.append(row)
         rounds_view.append({
             "round_num": int(r.get("round_num", 0)),
             "name": r.get("name", ""),
+            "stage_type": r.get("stage_type", "knockout"),
             "matches": matches_view,
         })
     return rounds_view
+
+
+@app.post("/tournaments/{tournament_id}/config")
+def update_tournament_config(request: Request, tournament_id: str,
+                             best_of: int = Form(...),
+                             points_to_win: int = Form(...),
+                             num_tables: int = Form(...),
+                             qualify_per_group: int = Form(...)):
+    """Admin/owner: per-tournament scoring + structure settings. Affects matches
+    started after the change (running matches keep their own values)."""
+    check_tournament_access(request, tournament_id)
+    if best_of not in (1, 3, 5, 7):
+        raise HTTPException(400, "best_of must be 1, 3, 5 or 7")
+    if points_to_win < 5:
+        raise HTTPException(400, "points_to_win must be at least 5")
+    if num_tables < 1 or qualify_per_group < 1:
+        raise HTTPException(400, "tables and qualifiers must be at least 1")
+    update_tournament(
+        tournament_id,
+        "SET best_of = :b, points_to_win = :p, num_tables = :n, qualify_per_group = :q",
+        {":b": int(best_of), ":p": int(points_to_win), ":n": int(num_tables),
+         ":q": int(qualify_per_group)},
+    )
+    return RedirectResponse(f"/tournaments/{tournament_id}", status_code=303)
+
+
+@app.get("/live/tournaments/{tournament_id}/tv", response_class=HTMLResponse)
+def live_tournament_tv(request: Request, tournament_id: str):
+    """Full-screen, no-click TV board: one tile per table, auto-refreshing."""
+    t = get_tournament(tournament_id)
+    if not t:
+        raise HTTPException(404, "Tournament not found")
+    return templates.TemplateResponse("tv_tournament.html", {
+        "request": request,
+        "tournament": t,
+        "table_board": _build_table_board(t, _build_rounds_view(t)),
+    })
 
 
 @app.get("/live/tournaments/{tournament_id}", response_class=HTMLResponse)
@@ -3067,8 +3290,11 @@ def live_tournament(request: Request, tournament_id: str):
     t = get_tournament(tournament_id)
     if not t:
         raise HTTPException(404, "Tournament not found")
+    rounds_view = _build_rounds_view(t)
     return templates.TemplateResponse("live_tournament.html", {
         "request": request,
         "tournament": t,
-        "rounds_view": _build_rounds_view(t),
+        "rounds_view": rounds_view,
+        "table_board": _build_table_board(t, rounds_view),
+        "standings": _all_pool_standings(t),
     })

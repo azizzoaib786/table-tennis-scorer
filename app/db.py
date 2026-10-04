@@ -306,6 +306,8 @@ DEFAULT_SETTINGS: Dict[str, Any] = {
     "deciding_side_change_at": 5,     # ends change at N pts in the deciding game (0 disables)
     "hard_cap_enabled": False,        # if True, first to hard_cap_at wins (overrides win-by-2)
     "hard_cap_at": 15,                # score at which hard cap triggers
+    "default_num_tables": 6,          # playing tables available (live table board + pool scheduling)
+    "default_qualify_per_group": 4,   # top N teams of each pool/group advance to the knockout stage
 }
 
 
@@ -316,7 +318,8 @@ def get_settings() -> Dict[str, Any]:
     merged.update({k: v for k, v in item.items() if v is not None})
     # Cast numeric fields
     for k in ("default_best_of", "default_points_to_win", "service_interval",
-              "deuce_interval", "deciding_side_change_at"):
+              "deuce_interval", "deciding_side_change_at",
+              "default_num_tables", "default_qualify_per_group"):
         try:
             merged[k] = int(merged[k])
         except Exception:

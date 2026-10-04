@@ -110,6 +110,34 @@
     {% endif %}
   </div>
 
+  {% if user and user.is_admin %}
+  <details class="bg-white rounded-2xl border-2 border-teal-200 shadow-lg p-3">
+    <summary class="cursor-pointer font-bold text-teal-900">⚙️ Tournament settings (Bo{{ tournament.best_of }} • to {{ tournament.points_to_win }} • {{ tournament.num_tables or 6 }} tables • top {{ tournament.qualify_per_group or 4 }} qualify)</summary>
+    <form method="post" action="/tournaments/{{ tournament.tournament_id }}/config" class="mt-3 grid grid-cols-2 gap-3">
+      <div>
+        <label class="text-xs font-bold text-teal-900">Best of (games)</label>
+        <select name="best_of" class="mt-1 w-full rounded-xl border-2 border-teal-200 px-3 py-2">
+          {% for opt in [1, 3, 5, 7] %}<option value="{{ opt }}" {% if tournament.best_of|int == opt %}selected{% endif %}>{{ opt }}</option>{% endfor %}
+        </select>
+      </div>
+      <div>
+        <label class="text-xs font-bold text-teal-900">Points to win</label>
+        <input type="number" name="points_to_win" min="5" value="{{ tournament.points_to_win }}" class="mt-1 w-full rounded-xl border-2 border-teal-200 px-3 py-2"/>
+      </div>
+      <div>
+        <label class="text-xs font-bold text-teal-900">Playing tables</label>
+        <input type="number" name="num_tables" min="1" max="50" value="{{ tournament.num_tables or 6 }}" class="mt-1 w-full rounded-xl border-2 border-teal-200 px-3 py-2"/>
+      </div>
+      <div>
+        <label class="text-xs font-bold text-teal-900">Qualifiers per group</label>
+        <input type="number" name="qualify_per_group" min="1" max="32" value="{{ tournament.qualify_per_group or 4 }}" class="mt-1 w-full rounded-xl border-2 border-teal-200 px-3 py-2"/>
+      </div>
+      <p class="col-span-2 text-[11px] text-teal-800">Applies to matches started after saving. Group ranking: wins, then NRR.</p>
+      <button class="col-span-2 rounded-lg bg-gradient-to-r from-teal-500 to-emerald-600 text-white font-bold px-3 py-2 text-sm">💾 Save settings</button>
+    </form>
+  </details>
+  {% endif %}
+
   <!-- Add round -->
   <div class="bg-white rounded-2xl border-2 border-indigo-200 shadow-lg p-4">
     <h2 class="text-lg font-bold text-indigo-900 mb-3">🎯 Add Round</h2>
@@ -151,7 +179,7 @@
         <div class="flex gap-2">
           <input name="start_table" type="number" min="1" value="1" placeholder="Start table"
                  class="w-24 rounded-xl border-2 border-fuchsia-200 px-3 py-2 text-sm"/>
-          <input name="num_tables" type="number" min="1" value="6" placeholder="# tables"
+          <input name="num_tables" type="number" min="1" value="{{ tournament.num_tables or 6 }}" placeholder="# tables"
                  class="w-24 rounded-xl border-2 border-fuchsia-200 px-3 py-2 text-sm"/>
         </div>
       </div>
@@ -164,6 +192,9 @@
       <button class="w-full rounded-xl bg-gradient-to-r from-fuchsia-600 to-pink-600 text-white font-bold px-3 py-2 text-sm">🪄 Generate pool matches</button>
     </form>
   </details>
+
+  {% set standings = pool_standings(tournament) %}
+  {% include "partials/standings.html" %}
 
   <!-- Rounds -->
   {% for r in (tournament.rounds or []) %}
