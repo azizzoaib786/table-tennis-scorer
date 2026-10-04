@@ -373,6 +373,7 @@ def put_registration(item: Dict[str, Any]) -> None:
 
 
 _dynamo_serializer = TypeSerializer()
+_ddb_low_level = boto3.client("dynamodb", region_name=AWS_REGION)
 
 
 def put_registrations_transact(items: List[Dict[str, Any]]) -> None:
@@ -618,7 +619,10 @@ def create_practice_full_booking(date: str, start_time: str, end_time: str, name
             for side in (1, 2)
         ]
         try:
-            ddb.meta.client.transact_write_items(TransactItems=[
+            # Plain low-level client: it expects explicitly typed values. (The
+            # resource's own meta.client auto-serializes, so typed values sent
+            # through it get wrapped twice and every transaction is rejected.)
+            _ddb_low_level.transact_write_items(TransactItems=[
                 {
                     "Put": {
                         "TableName": PRACTICE_BOOKINGS_TABLE,
@@ -631,7 +635,11 @@ def create_practice_full_booking(date: str, start_time: str, end_time: str, name
             return items[0], None
         except ClientError as e:
             if e.response.get("Error", {}).get("Code") == "TransactionCanceledException":
-                continue   # someone took a side of this table meanwhile — try the next
+                reasons = [r.get("Code") for r in e.response.get("CancellationReasons", [])]
+                # Only a lost race means "try the next table"; anything else
+                # (e.g. ValidationError) is a real bug and must not read as "full".
+                if any(c in ("ConditionalCheckFailed", "TransactionConflict") for c in reasons):
+                    continue
             raise
     return None, "full"
 
