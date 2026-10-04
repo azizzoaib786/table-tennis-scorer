@@ -306,7 +306,7 @@ def _pool_standings(t: Dict[str, Any], rnd: Dict[str, Any]) -> Dict[str, Any]:
 
 def _all_pool_standings(t: Dict[str, Any]) -> List[Dict[str, Any]]:
     return [_pool_standings(t, r) for r in (t.get("rounds") or [])
-            if r.get("stage_type") == "pool"]
+            if r.get("stage_type") == "pool" and r.get("matches")]
 
 
 templates.env.globals["pool_standings"] = _all_pool_standings
@@ -316,7 +316,8 @@ def _qualified_participant_ids(t: Dict[str, Any], before_round: int) -> Optional
     """Participant ids of all group qualifiers, or None unless every pool round
     before `before_round` is completely played."""
     pools = [r for r in (t.get("rounds") or [])
-             if r.get("stage_type") == "pool" and int(r.get("round_num", 0)) < before_round]
+             if r.get("stage_type") == "pool" and r.get("matches")
+             and int(r.get("round_num", 0)) < before_round]
     if not pools:
         return None
     ids: set = set()
