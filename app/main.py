@@ -30,11 +30,11 @@ from .db import (
     put_registration, get_registration, list_registrations_by_tournament,
     list_all_registrations, update_registration_paid, delete_registration,
     find_registration_by_name, find_registration_by_its, put_registrations_transact,
-    create_practice_booking, get_practice_booking_by_reference,
+    create_practice_half_booking, create_practice_full_booking, get_practice_booking_by_reference,
     list_all_practice_bookings, search_practice_bookings,
-    get_practice_slot_availability, delete_practice_booking_by_id,
+    get_practice_slot_availability, get_practice_tables_grid, delete_practice_booking_by_id,
     get_practice_date_ranges, set_practice_date_ranges, is_practice_date_open,
-    PRACTICE_TIME_RANGES, PRACTICE_SLOTS_PER_HOUR,
+    PRACTICE_TIME_RANGES, PRACTICE_TABLES,
 )
 from .logic import compute_state, player_name
 from .auth import hash_password, verify_password, create_session_token, verify_session_token
@@ -710,6 +710,30 @@ def profile_page(request: Request, user_id: str):
 # live scoring). Public link: no login required. ─────────────────────────────
 # The open dates are managed by admins at /admin/bookings (see db.py).
 PRACTICE_PHONE_RE = re.compile(r"^\+\d{12,15}$")
+PRACTICE_ITS_RE = re.compile(r"^\d{8}$")   # e.g. 11112222
+
+
+def _parse_practice_time_range(value: str) -> Optional[tuple]:
+    for s, e in PRACTICE_TIME_RANGES:
+        if value == f"{s}-{e}":
+            return s, e
+    return None
+
+
+def _validate_practice_common(name: str, phone: str, its: str, date: str, time_range: str,
+                              date_ranges: List[Dict[str, str]]) -> Optional[str]:
+    """Checks shared by the half- and full-table forms. Returns an error message or None."""
+    if not name or not phone or not its or not date or not time_range:
+        return "Please fill in every field and choose a time slot."
+    if not PRACTICE_PHONE_RE.match(phone):
+        return "Please enter a valid number with country code, e.g. +971568103175."
+    if not PRACTICE_ITS_RE.match(its):
+        return "ITS number must be exactly 8 digits, e.g. 11112222."
+    if _parse_practice_time_range(time_range) is None:
+        return "Please choose a valid time slot."
+    if not is_practice_date_open(date, date_ranges):
+        return "Bookings are not open for that date. Please choose an available date."
+    return None
 
 
 def _practice_date_ctx() -> Dict[str, Any]:
@@ -724,6 +748,7 @@ def _practice_date_ctx() -> Dict[str, Any]:
 
 @app.get("/booking", response_class=HTMLResponse)
 def booking_page(request: Request, ref: str = "", confirmed: str = ""):
+    """Landing page: choose half table / full table, plus 'find my booking'."""
     found = None
     searched = False
     if ref.strip():
@@ -735,8 +760,7 @@ def booking_page(request: Request, ref: str = "", confirmed: str = ""):
     return templates.TemplateResponse("booking.html", {
         "request": request,
         **_practice_date_ctx(),
-        "time_ranges": PRACTICE_TIME_RANGES,
-        "slots_per_hour": PRACTICE_SLOTS_PER_HOUR,
+        "tables": PRACTICE_TABLES,
         "ref_query": ref.strip(),
         "searched": searched,
         "found": found,
@@ -744,42 +768,77 @@ def booking_page(request: Request, ref: str = "", confirmed: str = ""):
     })
 
 
-@app.post("/booking", response_class=HTMLResponse)
-def booking_submit(request: Request, name: str = Form(...), phone: str = Form(...),
-                   date: str = Form(...), start_time: str = Form(...), end_time: str = Form(...)):
-    name = name.strip()
-    phone = phone.strip()
-    date = date.strip()
-    valid_range = (start_time, end_time) in PRACTICE_TIME_RANGES
-    date_ctx = _practice_date_ctx()
-    ctx = {
+def _render_booking_form(request: Request, mode: str, form: Optional[Dict[str, str]] = None,
+                         error: Optional[str] = None, status: int = 200):
+    return templates.TemplateResponse("booking_form.html", {
         "request": request,
-        **date_ctx,
+        "mode": mode,                      # "half" | "full"
+        **_practice_date_ctx(),
         "time_ranges": PRACTICE_TIME_RANGES,
-        "slots_per_hour": PRACTICE_SLOTS_PER_HOUR,
-        "ref_query": "",
-        "searched": False,
-        "found": None,
-    }
-    if not name or not phone or not date or not valid_range:
-        return templates.TemplateResponse("booking.html", {
-            **ctx, "error": "Please fill in your name, number, date and a valid time slot.",
-        }, status_code=400)
-    if not PRACTICE_PHONE_RE.match(phone):
-        return templates.TemplateResponse("booking.html", {
-            **ctx, "error": "Please enter a valid number with country code, e.g. +971568103175.",
-        }, status_code=400)
-    if not is_practice_date_open(date, date_ctx["date_ranges"]):
-        return templates.TemplateResponse("booking.html", {
-            **ctx, "error": "Bookings are not open for that date. Please choose an available date.",
-        }, status_code=400)
+        "tables": PRACTICE_TABLES,
+        "form": form or {},
+        "error": error,
+    }, status_code=status)
 
-    booking = create_practice_booking(date, start_time, end_time, name, phone)
-    if not booking:
-        return templates.TemplateResponse("booking.html", {
-            **ctx, "error": f"Sorry, {start_time}-{end_time} on {date} is fully booked. Please pick another slot.",
-        }, status_code=409)
 
+@app.get("/booking/half", response_class=HTMLResponse)
+def booking_half_page(request: Request):
+    return _render_booking_form(request, "half")
+
+
+@app.get("/booking/full", response_class=HTMLResponse)
+def booking_full_page(request: Request):
+    return _render_booking_form(request, "full")
+
+
+@app.post("/booking/half", response_class=HTMLResponse)
+def booking_half_submit(request: Request, name: str = Form(...), phone: str = Form(...),
+                        its: str = Form(...), partner_name: str = Form(...),
+                        date: str = Form(...), time_range: str = Form("")):
+    form = {"name": name.strip(), "phone": phone.strip(), "its": its.strip(),
+            "partner_name": partner_name.strip(), "date": date.strip(), "time_range": time_range.strip()}
+    err = _validate_practice_common(form["name"], form["phone"], form["its"], form["date"],
+                                    form["time_range"], get_practice_date_ranges())
+    if not err and not form["partner_name"]:
+        err = "Please enter your partner's name."
+    if err:
+        return _render_booking_form(request, "half", form, err, 400)
+
+    start_time, end_time = _parse_practice_time_range(form["time_range"])
+    booking, problem = create_practice_half_booking(
+        form["date"], start_time, end_time, form["name"], form["phone"], form["its"], form["partner_name"])
+    if problem == "duplicate":
+        return _render_booking_form(request, "half", form,
+            "This ITS number already has a half-table booking for that time slot. "
+            "Choose a different time, or book a full table instead.", 409)
+    if problem == "full":
+        return _render_booking_form(request, "half", form,
+            f"Sorry, no table side is left for {start_time}-{end_time} on {form['date']}. Please pick another slot.", 409)
+    return RedirectResponse(f"/booking?confirmed={booking['reference_number']}", status_code=303)
+
+
+@app.post("/booking/full", response_class=HTMLResponse)
+def booking_full_submit(request: Request, name: str = Form(...), phone: str = Form(...),
+                        its: str = Form(...), player2: str = Form(...), player3: str = Form(...),
+                        player4: str = Form(...), date: str = Form(...), time_range: str = Form("")):
+    form = {"name": name.strip(), "phone": phone.strip(), "its": its.strip(),
+            "player2": player2.strip(), "player3": player3.strip(), "player4": player4.strip(),
+            "date": date.strip(), "time_range": time_range.strip()}
+    err = _validate_practice_common(form["name"], form["phone"], form["its"], form["date"],
+                                    form["time_range"], get_practice_date_ranges())
+    if not err and not (form["player2"] and form["player3"] and form["player4"]):
+        err = "A full table needs the names of all 4 players."
+    if err:
+        return _render_booking_form(request, "full", form, err, 400)
+
+    start_time, end_time = _parse_practice_time_range(form["time_range"])
+    players = [form["name"], form["player2"], form["player3"], form["player4"]]
+    booking, problem = create_practice_full_booking(
+        form["date"], start_time, end_time, form["name"], form["phone"], form["its"], players)
+    if problem == "full":
+        return _render_booking_form(request, "full", form,
+            f"Sorry, no free table is left for {start_time}-{end_time} on {form['date']}. "
+            "Please pick another slot or book half a table.", 409)
     return RedirectResponse(f"/booking?confirmed={booking['reference_number']}", status_code=303)
 
 
@@ -788,25 +847,29 @@ def booking_availability(date: str = ""):
     date = date.strip()
     if not date:
         return JSONResponse({})
-    counts = get_practice_slot_availability(date)
-    return JSONResponse({
-        key: {"booked": count, "available": PRACTICE_SLOTS_PER_HOUR - count}
-        for key, count in counts.items()
-    })
+    return JSONResponse(get_practice_slot_availability(date))
 
 
 # ── Admin: practice bookings (view-only list + search, separate screen from
 # tournament/match admin) ─────────────────────────────────────────────────────
 @app.get("/admin/bookings", response_class=HTMLResponse)
-def admin_bookings(request: Request, q: str = "", dates_error: str = ""):
+def admin_bookings(request: Request, q: str = "", dates_error: str = "", gdate: str = ""):
     admin = require_admin(request)
     bookings = search_practice_bookings(q) if q.strip() else list_all_practice_bookings()
+    date_ctx = _practice_date_ctx()
+    grid_date = gdate.strip()
+    try:
+        datetime.strptime(grid_date, "%Y-%m-%d")
+    except ValueError:
+        grid_date = date_ctx["date_min"]     # default: first open date
     return templates.TemplateResponse("admin_bookings.html", {
         "request": request, "user": admin,
         "bookings": bookings,
         "q": q,
-        "date_ranges": get_practice_date_ranges(),
+        "date_ranges": date_ctx["date_ranges"],
         "dates_error": dates_error,
+        "grid_date": grid_date,
+        "grid": get_practice_tables_grid(grid_date) if grid_date else [],
     })
 
 

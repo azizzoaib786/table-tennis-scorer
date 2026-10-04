@@ -5,7 +5,7 @@ import boto3
 from botocore.exceptions import ClientError
 from boto3.dynamodb.conditions import Key, Attr
 from boto3.dynamodb.types import TypeSerializer
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 # AWS configuration
 AWS_REGION = os.getenv("AWS_REGION", "eu-west-1")
@@ -465,53 +465,179 @@ def find_registration_by_name(tournament_id: str, name: str) -> Optional[Dict[st
     return None
 
 
-# ── Practice slot bookings (standalone flow — separate from tournaments
+# ── Practice table bookings (standalone flow — separate from tournaments
 # and live scoring) ───────────────────────────────────────────────────────────
-# Capacity is enforced with a conditional put on a composite "slot_key"
-# (date#start-end#slot_no), so two people racing for the last open slot
-# can never both win it — DynamoDB rejects the loser's write atomically.
-PRACTICE_SLOTS_PER_HOUR = 6
+# Every time slot has PRACTICE_TABLES tables and every table has two sides; a
+# side is one doubles team (2 players). One row is stored per table side, keyed
+# by a composite "slot_key" (date#start-end#T<table>#S<side>) and claimed with a
+# conditional put, so two people racing for the same side can never both win.
+#   half booking -> claims ONE side  (booker + partner)
+#   full booking -> claims BOTH sides of one free table in a single transaction
+# Half bookings additionally take an "ITS lock" row (date#start-end#ITS#<its>)
+# so one ITS number can hold only one half-table booking per time slot. Full
+# bookings are exempt from that rule. Lock rows carry kind="lock" and the same
+# booking_id, so cancelling a booking removes its lock too.
+PRACTICE_TABLES = 4
 PRACTICE_TIME_RANGES = [("10:00", "11:00"), ("11:00", "12:00"), ("12:00", "13:00")]
 
 
-def _practice_slot_key(date: str, start_time: str, end_time: str, slot_no: int) -> str:
-    return f"{date}#{start_time}-{end_time}#{slot_no}"
+def _practice_slot_key(date: str, start_time: str, end_time: str, table_no: int, side: int) -> str:
+    return f"{date}#{start_time}-{end_time}#T{table_no}#S{side}"
 
 
-def create_practice_booking(date: str, start_time: str, end_time: str, name: str,
-                            phone: str) -> Optional[Dict[str, Any]]:
-    """Try to claim the first free slot (1..6) for this date/time range.
-    Returns the created booking dict, or None if the time range is full."""
+def _practice_its_lock_key(date: str, start_time: str, end_time: str, its: str) -> str:
+    return f"{date}#{start_time}-{end_time}#ITS#{its}"
+
+
+def _is_conditional_failure(e: ClientError) -> bool:
+    return e.response.get("Error", {}).get("Code") == "ConditionalCheckFailedException"
+
+
+def _scan_practice_items(date: Optional[str] = None) -> List[Dict[str, Any]]:
+    """All practice rows (optionally for one date), including ITS locks."""
+    kwargs: Dict[str, Any] = {}
+    if date:
+        kwargs = {
+            "FilterExpression": "#d = :d",
+            "ExpressionAttributeNames": {"#d": "date"},
+            "ExpressionAttributeValues": {":d": date},
+        }
+    return practice_bookings_tbl.scan(**kwargs).get("Items", [])
+
+
+def _practice_range_state(items: List[Dict[str, Any]], date: str, start_time: str,
+                          end_time: str) -> Dict[int, Dict[int, Dict[str, Any]]]:
+    """{table_no: {side: row}} for one date + time range (side rows only)."""
+    state: Dict[int, Dict[int, Dict[str, Any]]] = {t: {} for t in range(1, PRACTICE_TABLES + 1)}
+    for it in items:
+        if "table_no" not in it:   # ITS locks and pre-table-model legacy rows
+            continue
+        if (it.get("date"), it.get("start_time"), it.get("end_time")) != (date, start_time, end_time):
+            continue
+        t, s = int(it["table_no"]), int(it["side"])
+        if t in state:
+            state[t][s] = it
+    return state
+
+
+def _new_booking_meta() -> Dict[str, str]:
     booking_id = uuid.uuid4().hex
-    reference_number = ("PB" + booking_id[:6]).upper()
-    created_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
-    for slot_no in range(1, PRACTICE_SLOTS_PER_HOUR + 1):
+    return {
+        "booking_id": booking_id,
+        "reference_number": ("PB" + booking_id[:6]).upper(),
+        "created_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ"),
+    }
+
+
+def create_practice_half_booking(date: str, start_time: str, end_time: str, name: str,
+                                 phone: str, its: str, partner_name: str
+                                 ) -> Tuple[Optional[Dict[str, Any]], Optional[str]]:
+    """Book ONE side of a table for a doubles team (booker + partner).
+
+    Returns (booking, None) on success, or (None, "duplicate") if this ITS
+    already holds a half-table booking in the slot, or (None, "full") if no
+    side is left. Tables that already have one team are filled first, so
+    whole tables stay free for full-table bookings."""
+    meta = _new_booking_meta()
+    lock_key = _practice_its_lock_key(date, start_time, end_time, its)
+    try:
+        practice_bookings_tbl.put_item(
+            Item={
+                "slot_key": lock_key, "kind": "lock", "booking_id": meta["booking_id"],
+                "its": its, "date": date, "start_time": start_time, "end_time": end_time,
+            },
+            ConditionExpression="attribute_not_exists(slot_key)",
+        )
+    except ClientError as e:
+        if _is_conditional_failure(e):
+            return None, "duplicate"
+        raise
+
+    state = _practice_range_state(_scan_practice_items(date), date, start_time, end_time)
+    candidates: List[Tuple[int, int]] = []
+    for t in sorted(state):                      # join a team already seated
+        if len(state[t]) == 1:
+            candidates.append((t, 2 if 1 in state[t] else 1))
+    for t in sorted(state):                      # otherwise open a fresh table
+        if not state[t]:
+            candidates.extend([(t, 1), (t, 2)])
+
+    for table_no, side in candidates:
         item = {
-            "slot_key": _practice_slot_key(date, start_time, end_time, slot_no),
-            "booking_id": booking_id,
-            "reference_number": reference_number,
+            "slot_key": _practice_slot_key(date, start_time, end_time, table_no, side),
+            **meta,
+            "booking_type": "half",
+            "table_no": table_no,
+            "side": side,
             "name": name,
             "phone": phone,
+            "its": its,
+            "partner_name": partner_name,
+            "team": [name, partner_name],
             "date": date,
             "start_time": start_time,
             "end_time": end_time,
-            "slot_no": slot_no,
-            "created_at": created_at,
         }
         try:
-            practice_bookings_tbl.put_item(
-                Item=item,
-                ConditionExpression="attribute_not_exists(slot_key)",
-            )
-            return item
+            practice_bookings_tbl.put_item(Item=item, ConditionExpression="attribute_not_exists(slot_key)")
+            return item, None
         except ClientError as e:
-            if e.response.get("Error", {}).get("Code") == "ConditionalCheckFailedException":
+            if _is_conditional_failure(e):
                 continue
             raise
-    return None
+
+    practice_bookings_tbl.delete_item(Key={"slot_key": lock_key})   # nothing left: release guard
+    return None, "full"
+
+
+def create_practice_full_booking(date: str, start_time: str, end_time: str, name: str,
+                                 phone: str, its: str, players: List[str]
+                                 ) -> Tuple[Optional[Dict[str, Any]], Optional[str]]:
+    """Book a whole table for 4 players (players[0] is the booker; players
+    0-1 take side 1, players 2-3 take side 2). Both sides are claimed in one
+    transaction. Returns (booking, None) or (None, "full")."""
+    state = _practice_range_state(_scan_practice_items(date), date, start_time, end_time)
+    for table_no in [t for t in sorted(state) if not state[t]]:
+        meta = _new_booking_meta()
+        items = [
+            {
+                "slot_key": _practice_slot_key(date, start_time, end_time, table_no, side),
+                **meta,
+                "booking_type": "full",
+                "table_no": table_no,
+                "side": side,
+                "name": name,
+                "phone": phone,
+                "its": its,
+                "players": players,
+                "team": players[(side - 1) * 2:(side - 1) * 2 + 2],
+                "date": date,
+                "start_time": start_time,
+                "end_time": end_time,
+            }
+            for side in (1, 2)
+        ]
+        try:
+            ddb.meta.client.transact_write_items(TransactItems=[
+                {
+                    "Put": {
+                        "TableName": PRACTICE_BOOKINGS_TABLE,
+                        "Item": {k: _dynamo_serializer.serialize(v) for k, v in item.items()},
+                        "ConditionExpression": "attribute_not_exists(slot_key)",
+                    }
+                }
+                for item in items
+            ])
+            return items[0], None
+        except ClientError as e:
+            if e.response.get("Error", {}).get("Code") == "TransactionCanceledException":
+                continue   # someone took a side of this table meanwhile — try the next
+            raise
+    return None, "full"
 
 
 def get_practice_booking_by_reference(reference_number: str) -> Optional[Dict[str, Any]]:
+    """Returns the booking's lowest side row (a full-table booking has two)."""
     key = (reference_number or "").strip().upper()
     if not key:
         return None
@@ -520,48 +646,72 @@ def get_practice_booking_by_reference(reference_number: str) -> Optional[Dict[st
         ExpressionAttributeValues={":r": key},
     )
     items = resp.get("Items", [])
-    return items[0] if items else None
+    if not items:
+        return None
+    items.sort(key=lambda x: int(x.get("side", 0)))
+    return items[0]
 
 
 def list_all_practice_bookings() -> List[Dict[str, Any]]:
-    resp = practice_bookings_tbl.scan()
-    items = resp.get("Items", [])
-    items.sort(key=lambda x: (x.get("date", ""), x.get("start_time", ""), x.get("slot_no", 0)))
+    """One entry per booking (a full-table booking occupies two side rows)."""
+    bookings: Dict[str, Dict[str, Any]] = {}
+    for it in _scan_practice_items():
+        if it.get("kind") == "lock":
+            continue
+        cur = bookings.get(it["booking_id"])
+        if cur is None or int(it.get("side", 0)) < int(cur.get("side", 0)):
+            bookings[it["booking_id"]] = it
+    items = list(bookings.values())
+    items.sort(key=lambda x: (x.get("date", ""), x.get("start_time", ""),
+                              int(x.get("table_no", 0)), int(x.get("side", 0))))
     return items
 
 
 def search_practice_bookings(query: str) -> List[Dict[str, Any]]:
-    """Admin search across name/phone/reference number (in-memory filter —
+    """Admin search across names/ITS/phone/reference number (in-memory filter —
     booking volume for a single club's practice sessions is small)."""
     q = (query or "").strip().lower()
     if not q:
         return list_all_practice_bookings()
-    return [
-        b for b in list_all_practice_bookings()
-        if q in b.get("name", "").strip().lower()
-        or q in b.get("phone", "").strip().lower()
-        or q in b.get("reference_number", "").strip().lower()
-    ]
+
+    def haystack(b: Dict[str, Any]) -> str:
+        parts = [b.get("name", ""), b.get("phone", ""), b.get("its", ""),
+                 b.get("reference_number", ""), b.get("partner_name", "")]
+        parts.extend(b.get("players", []) or [])
+        return " ".join(str(p) for p in parts).lower()
+
+    return [b for b in list_all_practice_bookings() if q in haystack(b)]
 
 
-def get_practice_slot_availability(date: str) -> Dict[str, int]:
-    """Return {"10:00-11:00": booked_count, ...} for the given date."""
-    resp = practice_bookings_tbl.scan(
-        FilterExpression="#d = :d",
-        ExpressionAttributeNames={"#d": "date"},
-        ExpressionAttributeValues={":d": date},
-    )
-    items = resp.get("Items", [])
-    counts: Dict[str, int] = {f"{s}-{e}": 0 for s, e in PRACTICE_TIME_RANGES}
-    for b in items:
-        key = f"{b.get('start_time')}-{b.get('end_time')}"
-        if key in counts:
-            counts[key] += 1
-    return counts
+def get_practice_slot_availability(date: str) -> Dict[str, Dict[str, int]]:
+    """{"10:00-11:00": {"free_tables": n, "open_sides": n}, ...} for the date.
+    A half booking needs an open side; a full booking needs a free table."""
+    items = _scan_practice_items(date)
+    out: Dict[str, Dict[str, int]] = {}
+    for s, e in PRACTICE_TIME_RANGES:
+        state = _practice_range_state(items, date, s, e)
+        out[f"{s}-{e}"] = {
+            "free_tables": sum(1 for sides in state.values() if not sides),
+            "open_sides": sum(2 - len(sides) for sides in state.values()),
+        }
+    return out
 
 
-def delete_practice_booking(slot_key: str) -> None:
-    practice_bookings_tbl.delete_item(Key={"slot_key": slot_key})
+def get_practice_tables_grid(date: str) -> List[Dict[str, Any]]:
+    """Admin view: per time range, each table with its side 1 / side 2 row
+    (or None when the side is open)."""
+    items = _scan_practice_items(date)
+    grid = []
+    for s, e in PRACTICE_TIME_RANGES:
+        state = _practice_range_state(items, date, s, e)
+        grid.append({
+            "label": f"{s}–{e}",
+            "tables": [
+                {"table_no": t, "sides": [state[t].get(1), state[t].get(2)]}
+                for t in sorted(state)
+            ],
+        })
+    return grid
 
 
 def delete_practice_booking_by_id(booking_id: str) -> None:

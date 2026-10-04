@@ -1,0 +1,138 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1"/>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <title>{{ 'Half Table' if mode == 'half' else 'Full Table' }} Booking — TT Scorer</title>
+    <link rel="manifest" href="/static/manifest.json" />
+    <meta name="theme-color" content="#059669" />
+  </head>
+  <body class="bg-gradient-to-br from-emerald-100 via-teal-100 to-sky-100 min-h-screen p-3 sm:p-4">
+    <div class="max-w-xl mx-auto">
+      {% include "partials/branding_header.html" %}
+
+      <div class="bg-white rounded-3xl shadow-2xl border-2 border-emerald-200 p-5 sm:p-6">
+        <a href="/booking" class="text-sm font-bold text-emerald-700 hover:underline">← Change choice</a>
+
+        <div class="text-center my-4">
+          <div class="text-4xl mb-1">{{ '🏓' if mode == 'half' else '🏓🏓' }}</div>
+          {% if mode == 'half' %}
+          <h1 class="text-2xl font-bold text-emerald-900">Half Table</h1>
+          <p class="text-emerald-700 text-sm font-medium">Doubles — you and your partner get one side of a table. Another team takes the other side.</p>
+          {% else %}
+          <h1 class="text-2xl font-bold text-emerald-900">Full Table</h1>
+          <p class="text-emerald-700 text-sm font-medium">Book a whole table for 4 players (two doubles teams).</p>
+          {% endif %}
+        </div>
+
+        {% if error %}
+        <div class="mb-4 rounded-xl border-2 border-rose-300 bg-rose-50 text-rose-800 px-4 py-3 text-sm font-semibold">⚠️ {{ error }}</div>
+        {% endif %}
+
+        {% if not date_ranges %}
+        <div class="rounded-2xl border-2 border-amber-300 bg-amber-50 p-5 text-center text-amber-900 font-semibold">
+          Bookings are currently closed. Please check back later.
+        </div>
+        {% else %}
+        <form method="post" action="/booking/{{ mode }}" class="space-y-4" id="booking-form">
+          <div>
+            <label class="block text-sm font-bold text-emerald-900 mb-1">Your name</label>
+            <input type="text" name="name" required value="{{ form.name or '' }}" placeholder="Full name" class="w-full rounded-xl border-2 border-emerald-200 focus:border-emerald-400 px-4 py-3"/>
+          </div>
+          <div>
+            <label class="block text-sm font-bold text-emerald-900 mb-1">Your ITS number</label>
+            <input type="text" name="its" required inputmode="numeric" pattern="[0-9]{8}" maxlength="8" value="{{ form.its or '' }}" title="8 digits, e.g. 11112222" placeholder="e.g. 11112222" class="w-full rounded-xl border-2 border-emerald-200 focus:border-emerald-400 px-4 py-3 font-mono"/>
+          </div>
+          <div>
+            <label class="block text-sm font-bold text-emerald-900 mb-1">Your number</label>
+            <input type="tel" name="phone" required pattern="\+[0-9]{12,15}" value="{{ form.phone or '' }}" title="Include country code, e.g. +971568103175 (minimum 12 digits after +)" placeholder="e.g. +971568103175" class="w-full rounded-xl border-2 border-emerald-200 focus:border-emerald-400 px-4 py-3"/>
+          </div>
+
+          {% if mode == 'half' %}
+          <div>
+            <label class="block text-sm font-bold text-emerald-900 mb-1">Partner's name</label>
+            <input type="text" name="partner_name" required value="{{ form.partner_name or '' }}" placeholder="Partner's full name" class="w-full rounded-xl border-2 border-emerald-200 focus:border-emerald-400 px-4 py-3"/>
+          </div>
+          {% else %}
+          <div class="rounded-2xl border-2 border-emerald-100 bg-emerald-50 p-3 space-y-3">
+            <p class="text-xs font-bold uppercase text-emerald-700">The other 3 players (you are player 1)</p>
+            <input type="text" name="player2" required value="{{ form.player2 or '' }}" placeholder="Player 2 (your partner)" class="w-full rounded-xl border-2 border-emerald-200 focus:border-emerald-400 px-4 py-3 bg-white"/>
+            <input type="text" name="player3" required value="{{ form.player3 or '' }}" placeholder="Player 3" class="w-full rounded-xl border-2 border-emerald-200 focus:border-emerald-400 px-4 py-3 bg-white"/>
+            <input type="text" name="player4" required value="{{ form.player4 or '' }}" placeholder="Player 4" class="w-full rounded-xl border-2 border-emerald-200 focus:border-emerald-400 px-4 py-3 bg-white"/>
+          </div>
+          {% endif %}
+
+          <div>
+            <label class="block text-sm font-bold text-emerald-900 mb-1">Date</label>
+            <input type="date" name="date" id="booking-date" required
+                   min="{{ date_min }}" max="{{ date_max }}" value="{{ form.date or date_min }}"
+                   class="w-full rounded-xl border-2 border-emerald-200 focus:border-emerald-400 px-4 py-3 bg-white"/>
+            <p class="text-xs text-emerald-700 mt-1">Available: {% for r in date_ranges %}{{ r.start if r.start == r.end else r.start ~ ' to ' ~ r.end }}{{ ', ' if not loop.last }}{% endfor %}</p>
+          </div>
+          <div>
+            <label class="block text-sm font-bold text-emerald-900 mb-1">Time slot</label>
+            <div id="slot-options" class="space-y-2">
+              {% for start, end in time_ranges %}
+              <label class="flex items-center justify-between rounded-xl border-2 border-emerald-200 px-4 py-3 cursor-pointer hover:border-emerald-400" data-label="{{ start }}-{{ end }}">
+                <span class="flex items-center gap-2 font-semibold text-emerald-900">
+                  <input type="radio" name="time_range" value="{{ start }}-{{ end }}" required class="accent-emerald-600" {% if form.time_range == start ~ '-' ~ end %}checked{% endif %}/>
+                  {{ start }} – {{ end }}
+                </span>
+                <span class="text-xs font-bold text-emerald-700" data-slot="{{ start }}-{{ end }}">{{ tables }} tables</span>
+              </label>
+              {% endfor %}
+            </div>
+          </div>
+          <button type="submit" class="w-full rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 text-white px-6 py-4 text-lg font-bold shadow-lg">
+            🏓 {{ 'Book half table' if mode == 'half' else 'Book full table' }}
+          </button>
+        </form>
+        {% endif %}
+      </div>
+    </div>
+
+    {% if date_ranges %}
+    <script>
+      const mode = {{ mode|tojson }};
+      const dateInput = document.getElementById('booking-date');
+      const slotLabels = document.querySelectorAll('#slot-options [data-slot]');
+      const dateRanges = {{ date_ranges|tojson }};
+
+      // min/max already grey out everything outside the overall range in the
+      // calendar; this also blocks dates in gaps between separate open ranges
+      // by jumping to the next open date.
+      function enforceAllowedDate() {
+        const v = dateInput.value;
+        if (dateRanges.some((r) => r.start <= v && v <= r.end)) return;
+        const next = dateRanges.find((r) => r.start > v);
+        dateInput.value = (next || dateRanges[0]).start;
+      }
+
+      async function refreshAvailability() {
+        const date = dateInput.value;
+        if (!date) return;
+        try {
+          const res = await fetch(`/booking/availability?date=${encodeURIComponent(date)}`);
+          const data = await res.json();
+          slotLabels.forEach((el) => {
+            const info = data[el.getAttribute('data-slot')];
+            if (!info) return;
+            const n = mode === 'full' ? info.free_tables : info.open_sides;
+            const noun = mode === 'full' ? 'table' : 'side';
+            el.textContent = n === 0 ? 'Full' : `${n} ${noun}${n === 1 ? '' : 's'} left`;
+            el.classList.toggle('text-rose-600', n === 0);
+            el.classList.toggle('text-emerald-700', n > 0);
+            const radio = el.closest('label').querySelector('input[type=radio]');
+            radio.disabled = n === 0;
+            if (n === 0) radio.checked = false;
+          });
+        } catch (e) { /* availability is a nice-to-have; ignore failures */ }
+      }
+
+      dateInput.addEventListener('change', () => { enforceAllowedDate(); refreshAvailability(); });
+      refreshAvailability();
+    </script>
+    {% endif %}
+  </body>
+</html>

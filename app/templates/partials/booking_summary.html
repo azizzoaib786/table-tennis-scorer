@@ -1,0 +1,11 @@
+{# Booking details shared by the confirmation card and the reference lookup. Expects `b`. #}
+<p class="text-sm font-semibold">{{ b.date }} · {{ b.start_time }}–{{ b.end_time }}</p>
+{% if b.booking_type == 'full' %}
+<p class="text-sm">Table {{ b.table_no }} · Full table</p>
+<p class="text-sm">{{ (b.players or [])|join(', ') }}</p>
+{% elif b.booking_type == 'half' %}
+<p class="text-sm">Table {{ b.table_no }} · Side {{ b.side }}</p>
+<p class="text-sm">{{ b.name }} &amp; {{ b.partner_name }}</p>
+{% else %}
+<p class="text-sm">{{ b.name }}</p>
+{% endif %}
