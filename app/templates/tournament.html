@@ -5,6 +5,14 @@
     <meta name="viewport" content="width=device-width, initial-scale=1"/>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/htmx.org@1.9.12"></script>
+    <script>
+      // htmx silently drops 4xx/5xx responses; surface the server's message instead.
+      document.addEventListener("htmx:responseError", function (e) {
+        let msg = "Request failed (" + e.detail.xhr.status + ")";
+        try { msg = JSON.parse(e.detail.xhr.responseText).detail || msg; } catch (_) {}
+        alert(msg);
+      });
+    </script>
     <title>{{ tournament.name }} — TT Scorer</title>
     <link rel="manifest" href="/static/manifest.json" />
     <meta name="theme-color" content="#0ea5e9" />
