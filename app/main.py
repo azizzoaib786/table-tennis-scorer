@@ -580,14 +580,19 @@ def check_match_access(request: Request, match_id: str):
     raise HTTPException(status_code=403, detail="Access denied")
 
 
-def check_tournament_access(request: Request, tournament_id: str):
+def check_tournament_access(request: Request, tournament_id: str, scorer_can: bool = False, admin_only: bool = False):
+    """Admins (incl. root) have full access. Owners/assigned scorers may view
+    the tournament and, with scorer_can=True, start matches. Any other
+    non-GET request requires admin."""
     user = require_auth(request)
     t = must_tournament(tournament_id)
     if user.get("is_admin"):
         return user, t
-    if t.get("user_id") == user["user_id"]:
-        return user, t
-    if _tournament_grants_scorer(t, user):
+    if admin_only:
+        raise HTTPException(status_code=403, detail="Admins only")
+    if t.get("user_id") == user["user_id"] or _tournament_grants_scorer(t, user):
+        if request.method not in ("GET", "HEAD") and not scorer_can:
+            raise HTTPException(status_code=403, detail="Only admins can change tournament setup")
         return user, t
     raise HTTPException(status_code=403, detail="Access denied")
 
@@ -2268,7 +2273,7 @@ async def registration_submit(request: Request, tournament_id: str,
 # ── Registrations management (scorer/admin) ──────────────────────────────────
 @app.get("/tournaments/{tournament_id}/registrations", response_class=HTMLResponse)
 def registrations_page(request: Request, tournament_id: str):
-    user, t = check_tournament_access(request, tournament_id)
+    user, t = check_tournament_access(request, tournament_id, admin_only=True)
     regs = list_registrations_by_tournament(tournament_id)
     return templates.TemplateResponse("tournament_registrations.html", {
         "request": request, "user": user, "tournament": t, "registrations": regs,
@@ -2304,7 +2309,7 @@ def _registrations_rows(tournament_id: str) -> List[Dict[str, Any]]:
 
 @app.get("/tournaments/{tournament_id}/registrations/export.html", response_class=HTMLResponse)
 def registrations_export_html(request: Request, tournament_id: str):
-    user, t = check_tournament_access(request, tournament_id)
+    user, t = check_tournament_access(request, tournament_id, admin_only=True)
     regs = _registrations_rows(tournament_id)
     return templates.TemplateResponse("registrations_export.html", {
         "request": request, "tournament": t, "registrations": regs,
@@ -2313,7 +2318,7 @@ def registrations_export_html(request: Request, tournament_id: str):
 
 @app.get("/tournaments/{tournament_id}/registrations/export.xlsx")
 def registrations_export_xlsx(request: Request, tournament_id: str):
-    user, t = check_tournament_access(request, tournament_id)
+    user, t = check_tournament_access(request, tournament_id, admin_only=True)
     try:
         from openpyxl import Workbook
         from openpyxl.styles import Font, PatternFill, Alignment
@@ -2370,7 +2375,7 @@ def registrations_export_xlsx(request: Request, tournament_id: str):
 @app.get("/tournaments/{tournament_id}/qualifiers.xlsx")
 def qualifiers_export_xlsx(request: Request, tournament_id: str):
     """Excel report: qualified teams per group, full standings, and every group match score."""
-    user, t = check_tournament_access(request, tournament_id)
+    user, t = check_tournament_access(request, tournament_id, admin_only=True)
     try:
         from openpyxl import Workbook
         from openpyxl.styles import Font, PatternFill, Alignment
@@ -3250,7 +3255,7 @@ def delete_pair(request: Request, tournament_id: str, round_num: int, slot: int)
 
 @app.post("/tournaments/{tournament_id}/rounds/{round_num}/start/{slot}")
 def start_pair_match(request: Request, tournament_id: str, round_num: int, slot: int):
-    user, t = check_tournament_access(request, tournament_id)
+    user, t = check_tournament_access(request, tournament_id, scorer_can=True)
     target_round = next((r for r in t.get("rounds", []) if int(r.get("round_num", 0)) == int(round_num)), None)
     if not target_round:
         raise HTTPException(404, "Round not found")

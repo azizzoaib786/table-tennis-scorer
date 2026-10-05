@@ -46,6 +46,7 @@
   </div>
 
   <!-- Participants -->
+  {% if user and user.is_admin %}
   <div class="bg-white rounded-2xl border-2 border-sky-200 shadow-lg p-4">
     <h2 class="text-lg font-bold text-sky-900 mb-3">👥 Participants ({{ (tournament.participants or [])|length }})</h2>
 
@@ -109,6 +110,7 @@
     <p class="text-sm text-sky-700">Add participants to get started.</p>
     {% endif %}
   </div>
+  {% endif %}
 
   {% if user and user.is_admin %}
   <details class="bg-white rounded-2xl border-2 border-teal-200 shadow-lg p-3">
@@ -139,6 +141,7 @@
   {% endif %}
 
   <!-- Add round -->
+  {% if user and user.is_admin %}
   <div class="bg-white rounded-2xl border-2 border-indigo-200 shadow-lg p-4">
     <h2 class="text-lg font-bold text-indigo-900 mb-3">🎯 Add Round</h2>
     <form
@@ -192,6 +195,7 @@
       <button class="w-full rounded-xl bg-gradient-to-r from-fuchsia-600 to-pink-600 text-white font-bold px-3 py-2 text-sm">🪄 Generate pool matches</button>
     </form>
   </details>
+  {% endif %}
 
   {% set standings = pool_standings(tournament) %}
   {% if standings and user and user.is_admin %}
@@ -248,7 +252,7 @@
     {% endif %}
 
     <!-- Create pair (singles/doubles) -->
-    {% if pool and (pool|length) >= 2 %}
+    {% if user and user.is_admin and pool and (pool|length) >= 2 %}
     <form
       hx-post="/tournaments/{{ tournament.tournament_id }}/rounds/{{ r.round_num }}/pairs"
       hx-target="#tournament-body"
@@ -360,6 +364,7 @@
               </div>
             </div>
             {% if m.winner %}<div class="text-xs text-amber-700 font-bold mt-0.5">🏆 Winner: {{ winner_slot_label(tournament, m) or m.winner_name }}</div>{% endif %}
+            {% if user and user.is_admin %}
             <form hx-post="/tournaments/{{ tournament.tournament_id }}/rounds/{{ r.round_num }}/pairs/{{ m.slot }}/table"
                   hx-target="#tournament-body" hx-swap="innerHTML"
                   class="mt-1 flex items-center gap-1">
@@ -368,6 +373,7 @@
                      class="w-16 rounded border border-indigo-200 px-1 py-0.5 text-xs" placeholder="—"/>
               <button class="px-2 py-0.5 rounded bg-indigo-500 hover:bg-indigo-600 text-white text-[10px] font-bold">Save</button>
             </form>
+            {% endif %}
           </div>
           <div class="flex gap-2 flex-wrap">
             {% if m.match_id %}
@@ -378,6 +384,7 @@
                   {% if busy_msg %}onsubmit='return confirm({{ ("⚠️ Table " ~ m.table_number ~ " already has a match in progress:\n\n" ~ busy_msg ~ "\n\nThe scorer there may still be scoring. Start this match anyway?")|tojson }})'{% endif %}>
               <button class="px-3 py-2 rounded-lg bg-gradient-to-r from-emerald-600 to-teal-600 text-white text-xs font-bold shadow-md">▶️ Start</button>
             </form>
+            {% if user and user.is_admin %}
             <button type="button" onclick="this.closest('.rounded-xl').querySelector('.pair-edit-panel').classList.toggle('hidden')"
                     class="px-3 py-2 rounded-lg bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold shadow-md">✏️ Edit</button>
             <form hx-post="/tournaments/{{ tournament.tournament_id }}/rounds/{{ r.round_num }}/pairs/{{ m.slot }}/delete"
@@ -386,10 +393,11 @@
               <button class="px-3 py-2 rounded-lg bg-rose-500 hover:bg-rose-600 text-white text-xs font-bold shadow-md">🗑️</button>
             </form>
             {% endif %}
+            {% endif %}
           </div>
         </div>
 
-        {% if not m.match_id %}
+        {% if not m.match_id and user and user.is_admin %}
         <!-- Edit form (hidden by default) -->
         <form
           hx-post="/tournaments/{{ tournament.tournament_id }}/rounds/{{ r.round_num }}/pairs/{{ m.slot }}/edit"

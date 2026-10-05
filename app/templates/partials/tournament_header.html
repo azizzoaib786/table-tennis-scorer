@@ -4,14 +4,13 @@
       <div id="tournament-name-view" class="flex items-center gap-2 mb-1">
         <span class="text-2xl">🏆</span>
         <h1 class="text-xl sm:text-2xl font-bold text-sky-900 truncate">{{ tournament.name }}</h1>
-        <button type="button"
-                class="text-sky-500 hover:text-sky-700 text-sm"
+        {% if user and user.is_admin %}<button type="button" hover:text-sky-700 text-sm"
                 title="Rename tournament"
                 onclick="document.getElementById('tournament-name-view').classList.add('hidden');
                          document.getElementById('tournament-name-edit').classList.remove('hidden');
                          document.getElementById('tournament-name-input').focus();">
           ✏️
-        </button>
+        </button>{% endif %}
       </div>
       <form id="tournament-name-edit"
             class="hidden flex items-center gap-2 mb-1"
@@ -36,9 +35,11 @@
       <p class="text-sky-700 text-sm font-medium">Bo{{ tournament.best_of }} • First to {{ tournament.points_to_win }}</p>
     </div>
     <div class="flex gap-2 items-start flex-wrap justify-end">
+      {% if user and user.is_admin %}
       <a href="/tournaments/{{ tournament.tournament_id }}/registrations" class="px-3 py-2 rounded-xl border-2 border-emerald-200 bg-emerald-50 text-emerald-800 font-semibold text-sm">🎫 Registrations</a>
+      {% endif %}
       <a href="/" class="px-3 py-2 rounded-xl border-2 border-sky-200 bg-sky-50 text-sky-800 font-semibold">🏠</a>
-      {% if user and (user.is_admin or user.user_id == tournament.user_id) %}
+      {% if user and user.is_admin %}
       <form hx-post="/tournaments/{{ tournament.tournament_id }}/delete"
             hx-swap="none"
             hx-confirm="⚠️ Delete '{{ tournament.name }}' AND all its registrations + matches? This cannot be undone.">
