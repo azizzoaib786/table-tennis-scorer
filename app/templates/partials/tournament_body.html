@@ -202,6 +202,7 @@
   {% include "partials/standings.html" %}
 
   <!-- Rounds -->
+  {% set busy = busy_tables(tournament) %}
   {% for r in (tournament.rounds or []) %}
   {% set pool = advancing_participants(tournament, r.round_num) %}
   <div class="bg-white rounded-2xl border-2 border-emerald-200 shadow-lg p-4">
@@ -217,6 +218,28 @@
         <span class="text-xs px-2 py-1 rounded-full bg-emerald-100 text-emerald-700 font-bold">Round {{ r.round_num }}</span>
       </div>
     </div>
+
+    {% if user and user.is_admin %}
+    <details class="mb-3">
+      <summary class="cursor-pointer text-xs font-bold text-teal-800">⚙️ Scoring for this round: Bo{{ r.get('best_of') or tournament.best_of }} • to {{ r.get('points_to_win') or tournament.points_to_win }}{% if r.get('best_of') or r.get('points_to_win') %} (round override){% endif %}</summary>
+      <form hx-post="/tournaments/{{ tournament.tournament_id }}/rounds/{{ r.round_num }}/config"
+            hx-target="#tournament-body" hx-swap="innerHTML" class="mt-2 flex items-end gap-2 flex-wrap">
+        <div>
+          <label class="text-[10px] font-bold text-teal-900 block">Best of</label>
+          <select name="best_of" class="rounded-lg border-2 border-teal-200 px-2 py-1 text-sm">
+            <option value="0">Tournament ({{ tournament.best_of }})</option>
+            {% for opt in [1, 3, 5, 7] %}<option value="{{ opt }}" {% if r.get('best_of') == opt %}selected{% endif %}>{{ opt }}</option>{% endfor %}
+          </select>
+        </div>
+        <div>
+          <label class="text-[10px] font-bold text-teal-900 block">Points to win</label>
+          <input type="number" name="points_to_win" min="0" value="{{ r.get('points_to_win') or 0 }}" class="w-24 rounded-lg border-2 border-teal-200 px-2 py-1 text-sm"/>
+        </div>
+        <button class="rounded-lg bg-teal-600 hover:bg-teal-700 text-white font-bold px-3 py-1.5 text-sm">Save</button>
+        <span class="text-[10px] text-teal-700">0 = use tournament value. Applies to matches started after saving.</span>
+      </form>
+    </details>
+    {% endif %}
 
     {% if r.round_num > 1 and r.stage_type != 'pool' and r.stage_type != 'plate' and r.stage_type != 'custom' and (pool|length) < (tournament.participants|length) %}
     <div class="mb-3 rounded-lg border-2 border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
@@ -324,6 +347,10 @@
               {% if m.table_number %}
                 <span class="text-[10px] px-2 py-0.5 rounded-full border bg-indigo-50 text-indigo-800 border-indigo-200 font-bold">🪧 Table {{ m.table_number }}</span>
               {% endif %}
+              {% set busy_msg = (busy.get(m.table_number|int) if (m.table_number and not m.match_id) else none) %}
+              {% if busy_msg %}
+                <span class="text-[10px] px-2 py-0.5 rounded-full border bg-red-100 text-red-700 border-red-300 font-bold animate-pulse">⚠️ Table in use</span>
+              {% endif %}
               <div class="font-bold text-emerald-900 truncate">
                 {% if is_doubles %}
                   {{ m.a_name }} / {{ m.a2_name }} <span class="text-slate-400">vs</span> {{ m.b_name }} / {{ m.b2_name }}
@@ -347,7 +374,8 @@
             <a href="/matches/{{ m.match_id }}" class="px-3 py-2 rounded-lg bg-blue-600 text-white text-xs font-bold shadow-md">Open</a>
             <a href="/live/{{ m.match_id }}" target="_blank" class="px-3 py-2 rounded-lg bg-emerald-600 text-white text-xs font-bold shadow-md">📺 Live</a>
             {% else %}
-            <form method="post" action="/tournaments/{{ tournament.tournament_id }}/rounds/{{ r.round_num }}/start/{{ m.slot }}">
+            <form method="post" action="/tournaments/{{ tournament.tournament_id }}/rounds/{{ r.round_num }}/start/{{ m.slot }}"
+                  {% if busy_msg %}onsubmit='return confirm({{ ("⚠️ Table " ~ m.table_number ~ " already has a match in progress:\n\n" ~ busy_msg ~ "\n\nThe scorer there may still be scoring. Start this match anyway?")|tojson }})'{% endif %}>
               <button class="px-3 py-2 rounded-lg bg-gradient-to-r from-emerald-600 to-teal-600 text-white text-xs font-bold shadow-md">▶️ Start</button>
             </form>
             <button type="button" onclick="this.closest('.rounded-xl').querySelector('.pair-edit-panel').classList.toggle('hidden')"

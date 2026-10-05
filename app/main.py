@@ -357,6 +357,28 @@ def _build_table_board(t: Dict[str, Any], rounds_view: List[Dict[str, Any]]) -> 
     return [tables[k] for k in sorted(tables)]
 
 
+def _busy_tables(t: Dict[str, Any]) -> Dict[int, str]:
+    """{table_number: 'A / B vs C / D'} for matches that were started but not yet decided."""
+    busy: Dict[int, str] = {}
+    for r in (t.get("rounds") or []):
+        for s in (r.get("matches") or []):
+            if not s.get("match_id") or s.get("winner") in ("A", "B"):
+                continue
+            try:
+                tn = int(s.get("table_number") or 0)
+            except (TypeError, ValueError):
+                tn = 0
+            if tn < 1:
+                continue
+            la, _ = _side_label(t, s, "a")
+            lb, _ = _side_label(t, s, "b")
+            busy[tn] = f"{la} vs {lb} ({r.get('name', '')})"
+    return busy
+
+
+templates.env.globals["busy_tables"] = _busy_tables
+
+
 def _winning_side_label(match: Dict[str, Any], tournament: Optional[Dict[str, Any]],
                         winner: str) -> str:
     """Human label for the winning side of a match.
@@ -3136,6 +3158,33 @@ def edit_pair(request: Request, tournament_id: str, round_num: int, slot: int,
     })
 
 
+@app.post("/tournaments/{tournament_id}/rounds/{round_num}/config", response_class=HTMLResponse)
+def set_round_config(request: Request, tournament_id: str, round_num: int,
+                     best_of: int = Form(0), points_to_win: int = Form(0)):
+    """Per-round override of best-of / points-to-win (0 = use the tournament value).
+    Applies to matches started afterwards."""
+    user, t = check_tournament_access(request, tournament_id)
+    if best_of not in (0, 1, 3, 5, 7):
+        raise HTTPException(400, "best_of must be 1, 3, 5 or 7")
+    if points_to_win != 0 and points_to_win < 5:
+        raise HTTPException(400, "points_to_win must be at least 5")
+    rounds = t.get("rounds", [])
+    target = next((r for r in rounds if int(r.get("round_num", 0)) == int(round_num)), None)
+    if not target:
+        raise HTTPException(404, "Round not found")
+    for key, val in (("best_of", best_of), ("points_to_win", points_to_win)):
+        if val:
+            target[key] = int(val)
+        else:
+            target.pop(key, None)
+    update_tournament(tournament_id, "SET rounds = :r", {":r": rounds})
+    return templates.TemplateResponse("partials/tournament_body.html", {
+        "request": request, "user": user, "tournament": must_tournament(tournament_id),
+        "roster": list_roster(),
+        "flash": f"✅ {target.get('name', 'Round')} scoring saved",
+    })
+
+
 @app.post("/tournaments/{tournament_id}/rounds/{round_num}/pairs/{slot}/table", response_class=HTMLResponse)
 def set_pair_table(request: Request, tournament_id: str, round_num: int, slot: int,
                    table_number: str = Form("")):
@@ -3227,8 +3276,8 @@ def start_pair_match(request: Request, tournament_id: str, round_num: int, slot:
         "match_type": match_type,
         "player_a": pair["a_name"],
         "player_b": pair["b_name"],
-        "best_of": int(t.get("best_of", cfg["default_best_of"])),
-        "points_to_win": int(t.get("points_to_win", cfg["default_points_to_win"])),
+        "best_of": int(target_round.get("best_of") or t.get("best_of", cfg["default_best_of"])),
+        "points_to_win": int(target_round.get("points_to_win") or t.get("points_to_win", cfg["default_points_to_win"])),
         "service_interval": int(t.get("service_interval", cfg["service_interval"])),
         "deuce_interval": int(t.get("deuce_interval", cfg["deuce_interval"])),
         "deciding_side_change_at": int(cfg.get("deciding_side_change_at", 5)),
