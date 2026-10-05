@@ -2345,6 +2345,76 @@ def registrations_export_xlsx(request: Request, tournament_id: str):
     )
 
 
+@app.get("/tournaments/{tournament_id}/qualifiers.xlsx")
+def qualifiers_export_xlsx(request: Request, tournament_id: str):
+    """Excel report: qualified teams per group, full standings, and every group match score."""
+    user, t = check_tournament_access(request, tournament_id)
+    try:
+        from openpyxl import Workbook
+        from openpyxl.styles import Font, PatternFill, Alignment
+    except ImportError:
+        raise HTTPException(500, "openpyxl not installed on the server — run `pip install -r requirements.txt`")
+
+    pools = [r for r in (t.get("rounds") or []) if r.get("stage_type") == "pool" and r.get("matches")]
+    standings = [_pool_standings(t, r) for r in pools]
+
+    wb = Workbook()
+    header_font = Font(bold=True, color="FFFFFF")
+    header_fill = PatternFill(start_color="047857", end_color="047857", fill_type="solid")
+
+    def style_header(ws, widths):
+        for cell in ws[1]:
+            cell.font = header_font
+            cell.fill = header_fill
+            cell.alignment = Alignment(horizontal="center", vertical="center")
+        for i, w in enumerate(widths, start=1):
+            ws.column_dimensions[chr(64 + i)].width = w
+
+    stat_cols = ["Group", "Rank", "Team", "Played", "Won", "Lost", "Points for", "Points against", "NRR"]
+    ws = wb.active
+    ws.title = "Qualifiers"
+    ws.append(["#"] + stat_cols + ["Group complete"])
+    n = 0
+    for g in standings:
+        for r in g["rows"]:
+            if r["qualified"]:
+                n += 1
+                ws.append([n, g["name"], r["rank"], r["label"], r["played"], r["wins"], r["losses"],
+                           r["pf"], r["pa"], r["nrr"], "Yes" if g["complete"] else "No"])
+    style_header(ws, [5, 16, 7, 32, 8, 6, 6, 11, 14, 8, 16])
+
+    ws2 = wb.create_sheet("All standings")
+    ws2.append(stat_cols + ["Qualified"])
+    for g in standings:
+        for r in g["rows"]:
+            ws2.append([g["name"], r["rank"], r["label"], r["played"], r["wins"], r["losses"],
+                        r["pf"], r["pa"], r["nrr"], "Yes" if r["qualified"] else ""])
+    style_header(ws2, [16, 7, 32, 8, 6, 6, 11, 14, 8, 10])
+
+    ws3 = wb.create_sheet("Group results")
+    ws3.append(["Group", "Match", "Table", "Team A", "Team B", "Score A", "Score B", "Winner"])
+    for r in pools:
+        for s in r.get("matches") or []:
+            la, _ = _side_label(t, s, "a")
+            lb, _ = _side_label(t, s, "b")
+            decided = s.get("winner") in ("A", "B")
+            pts = (_slot_points(s) if decided else None) or (None, None)
+            ws3.append([r.get("name", ""), int(s.get("slot", 0)), int(s.get("table_number") or 0) or "",
+                        la, lb, pts[0], pts[1],
+                        (la if s.get("winner") == "A" else lb) if decided else ""])
+    style_header(ws3, [16, 7, 7, 32, 32, 9, 9, 32])
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    safe_name = "".join(c if c.isalnum() or c in "-_" else "_" for c in t.get("name", "tournament"))
+    return StreamingResponse(
+        buf,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="{safe_name}-qualifiers.xlsx"'},
+    )
+
+
 @app.post("/tournaments/{tournament_id}/participants", response_class=HTMLResponse)
 def add_participant(request: Request, tournament_id: str,
                     name: str = Form(""), user_id: str = Form(""),
