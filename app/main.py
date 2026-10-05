@@ -162,7 +162,24 @@ def _advancing_participants(tournament: dict, round_num: int) -> list:
         return participants
     rounds = tournament.get("rounds", []) or []
     current = next((r for r in rounds if int(r.get("round_num", 0)) == int(round_num)), None)
-    if current and current.get("stage_type") in ("pool", "plate", "custom"):
+    if current and current.get("stage_type") == "plate":
+        # 3rd-place playoff: once the semi finals (a fully scored 2-match
+        # knockout round) are done, only the semi-final losers are eligible.
+        semi = next((r for r in sorted(rounds, key=lambda r: -int(r.get("round_num", 0)))
+                     if int(r.get("round_num", 0)) < int(round_num)
+                     and r.get("stage_type", "knockout") == "knockout"
+                     and len(r.get("matches") or []) == 2
+                     and all(m.get("winner") in ("A", "B") for m in r["matches"])), None)
+        if semi:
+            loser_ids = set()
+            for m in semi["matches"]:
+                s = "b" if m["winner"] == "A" else "a"
+                loser_ids.add(m.get(f"{s}_id"))
+                if m.get("match_type") == "doubles" and m.get(f"{s}2_id"):
+                    loser_ids.add(m.get(f"{s}2_id"))
+            return [p for p in participants if p.get("id") in loser_ids]
+        return participants
+    if current and current.get("stage_type") in ("pool", "custom"):
         return participants
     prev = next((r for r in rounds if int(r.get("round_num", 0)) == int(round_num) - 1), None)
     if not prev:
