@@ -209,28 +209,6 @@
         {% endif %}
       </div>
 
-      {% if recent_matches %}
-      <div class="mt-4 bg-white rounded-3xl shadow-2xl border-2 border-emerald-200 p-5">
-        <h2 class="text-lg font-bold text-emerald-900 mb-3">📜 Recent Matches</h2>
-        <div class="space-y-2">
-          {% for m in recent_matches %}
-          <a href="/matches/{{ m.match_id }}" class="block bg-emerald-50 hover:bg-emerald-100 rounded-xl border-2 border-emerald-200 p-4 transition-all">
-            <div class="flex items-center justify-between">
-              <div>
-                <div class="font-bold text-slate-800">🏓 {{ m.name }}</div>
-                <div class="text-xs text-emerald-700 mt-1">
-                  {{ m.player_a }} vs {{ m.player_b }} • Bo{{ m.best_of }} to {{ m.points_to_win }}
-                  {% if m.winner %}<span class="ml-1 px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 font-bold">🏆 {{ m.player_a if m.winner == 'A' else m.player_b }}</span>{% endif %}
-                </div>
-              </div>
-              <div class="text-emerald-600 text-xl">→</div>
-            </div>
-          </a>
-          {% endfor %}
-        </div>
-      </div>
-      {% endif %}
-
       {% if recent_tournaments %}
       <div class="mt-4 bg-white rounded-3xl shadow-2xl border-2 border-sky-200 p-5">
         <h2 class="text-lg font-bold text-sky-900 mb-3">🏆 Recent Tournaments</h2>
