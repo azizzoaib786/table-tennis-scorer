@@ -1,0 +1,86 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1"/>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <title>{{ tournament.name }} — Results</title>
+    <style>
+      @media print {
+        .no-print { display: none !important; }
+        body { background: white; }
+        .round { break-inside: avoid; }
+      }
+    </style>
+  </head>
+  <body class="bg-white min-h-screen p-6 text-slate-900">
+    <div class="max-w-4xl mx-auto">
+      <div class="flex items-center justify-between mb-4 flex-wrap gap-2">
+        <h1 class="text-2xl font-bold">🏓 {{ tournament.name }} — Results</h1>
+        <button onclick="window.print()" class="no-print px-4 py-2 rounded-lg bg-slate-800 text-white text-sm font-bold">🖨️ Print</button>
+      </div>
+
+      {% for rd in rounds %}
+      <div class="round mb-8">
+        <h2 class="text-lg font-bold text-emerald-900 mb-2">{{ rd.name }} <span class="text-xs font-normal text-slate-500">(Round {{ rd.round_num }})</span></h2>
+        <table class="w-full text-sm border-collapse">
+          <thead>
+            <tr class="bg-slate-100 border-b-2 border-slate-300">
+              <th class="text-left py-2 px-3">#</th>
+              <th class="text-left py-2 px-3">Table</th>
+              <th class="text-left py-2 px-3">Team A</th>
+              <th class="text-left py-2 px-3">Team B</th>
+              <th class="text-center py-2 px-3">Points</th>
+              <th class="text-left py-2 px-3">Winner</th>
+            </tr>
+          </thead>
+          <tbody>
+          {% for m in rd.rows %}
+            <tr class="border-b border-slate-200">
+              <td class="py-2 px-3">{{ m.slot }}</td>
+              <td class="py-2 px-3">{{ m.table }}</td>
+              <td class="py-2 px-3 {% if m.winner == m.a %}font-bold{% endif %}">{{ m.a }}</td>
+              <td class="py-2 px-3 {% if m.winner == m.b %}font-bold{% endif %}">{{ m.b }}</td>
+              <td class="py-2 px-3 text-center">{% if m.winner %}{{ m.a_pts }} - {{ m.b_pts }}{% else %}<span class="text-slate-400">{{ m.status }}</span>{% endif %}</td>
+              <td class="py-2 px-3 font-semibold text-emerald-800">{{ m.winner }}</td>
+            </tr>
+          {% else %}
+            <tr><td colspan="6" class="py-4 text-center text-slate-500">No matches yet.</td></tr>
+          {% endfor %}
+          </tbody>
+        </table>
+
+        {% if rd.standings and rd.standings.rows %}
+        <h3 class="text-sm font-bold mt-4 mb-1">Standings</h3>
+        <table class="w-full text-sm border-collapse">
+          <thead>
+            <tr class="bg-slate-100 border-b-2 border-slate-300">
+              <th class="text-left py-1 px-3">Rank</th>
+              <th class="text-left py-1 px-3">Team</th>
+              <th class="text-center py-1 px-3">P</th>
+              <th class="text-center py-1 px-3">W</th>
+              <th class="text-center py-1 px-3">L</th>
+              <th class="text-center py-1 px-3">NRR</th>
+            </tr>
+          </thead>
+          <tbody>
+          {% for r in rd.standings.rows %}
+            <tr class="border-b border-slate-200 {% if r.qualified %}bg-emerald-50{% endif %}">
+              <td class="py-1 px-3">{{ r.rank }}</td>
+              <td class="py-1 px-3 font-semibold">{{ r.label }}{% if r.qualified %} ✅{% endif %}</td>
+              <td class="py-1 px-3 text-center">{{ r.played }}</td>
+              <td class="py-1 px-3 text-center">{{ r.wins }}</td>
+              <td class="py-1 px-3 text-center">{{ r.losses }}</td>
+              <td class="py-1 px-3 text-center">{{ r.nrr }}</td>
+            </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+        {% endif %}
+      </div>
+      {% else %}
+      <p class="text-slate-500">No rounds yet.</p>
+      {% endfor %}
+    </div>
+  </body>
+</html>

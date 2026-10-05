@@ -2372,6 +2372,94 @@ def registrations_export_xlsx(request: Request, tournament_id: str):
     )
 
 
+def _round_results(t: Dict[str, Any], round_num: Optional[int] = None) -> List[Dict[str, Any]]:
+    """Per-round results (all rounds, or just `round_num`): one row per match."""
+    out: List[Dict[str, Any]] = []
+    for r in (t.get("rounds") or []):
+        if round_num is not None and int(r.get("round_num", 0)) != int(round_num):
+            continue
+        rows = []
+        for s in (r.get("matches") or []):
+            a_label, _ = _side_label(t, s, "a")
+            b_label, _ = _side_label(t, s, "b")
+            w = s.get("winner")
+            pts = _slot_points(s) if w in ("A", "B") else None
+            rows.append({
+                "slot": int(s.get("slot", 0) or 0),
+                "table": int(s.get("table_number") or 0) or "",
+                "a": a_label, "b": b_label,
+                "a_pts": pts[0] if pts else "", "b_pts": pts[1] if pts else "",
+                "winner": (a_label if w == "A" else b_label) if w in ("A", "B") else "",
+                "status": "Completed" if w in ("A", "B") else ("In progress" if s.get("match_id") else "Pending"),
+            })
+        out.append({
+            "round_num": int(r.get("round_num", 0)), "name": r.get("name", ""),
+            "stage_type": r.get("stage_type", "knockout"), "rows": rows,
+            "standings": _pool_standings(t, r) if r.get("stage_type") == "pool" and r.get("matches") else None,
+        })
+    return out
+
+
+@app.get("/tournaments/{tournament_id}/results.html", response_class=HTMLResponse)
+def round_results_html(request: Request, tournament_id: str, round: Optional[int] = None):
+    user, t = check_tournament_access(request, tournament_id, admin_only=True)
+    return templates.TemplateResponse("round_results.html", {
+        "request": request, "tournament": t, "rounds": _round_results(t, round),
+    })
+
+
+@app.get("/tournaments/{tournament_id}/results.xlsx")
+def round_results_xlsx(request: Request, tournament_id: str, round: Optional[int] = None):
+    user, t = check_tournament_access(request, tournament_id, admin_only=True)
+    try:
+        from openpyxl import Workbook
+        from openpyxl.styles import Font, PatternFill, Alignment
+    except ImportError:
+        raise HTTPException(500, "openpyxl not installed on the server — run `pip install -r requirements.txt`")
+
+    rounds = _round_results(t, round)
+    wb = Workbook()
+    wb.remove(wb.active)
+    header_font = Font(bold=True, color="FFFFFF")
+    header_fill = PatternFill(start_color="047857", end_color="047857", fill_type="solid")
+
+    def style_header(ws, widths):
+        for cell in ws[1]:
+            cell.font = header_font
+            cell.fill = header_fill
+            cell.alignment = Alignment(horizontal="center", vertical="center")
+        for i, w in enumerate(widths, start=1):
+            ws.column_dimensions[chr(64 + i)].width = w
+
+    for rd in rounds:
+        title = "".join(c for c in f"R{rd['round_num']} {rd['name']}" if c not in '[]:*?/\\')[:31]
+        ws = wb.create_sheet(title or f"Round {rd['round_num']}")
+        ws.append(["Match", "Table", "Team A", "Team B", "Points A", "Points B", "Winner", "Status"])
+        for row in rd["rows"]:
+            ws.append([row["slot"], row["table"], row["a"], row["b"], row["a_pts"], row["b_pts"],
+                       row["winner"], row["status"]])
+        style_header(ws, [7, 7, 30, 30, 10, 10, 30, 14])
+        st = rd["standings"]
+        if st and st["rows"]:
+            ws.append([])
+            ws.append(["Standings", "Rank", "Team", "Played", "Won", "Lost", "Points for", "Points against", "NRR"])
+            for r in st["rows"]:
+                ws.append(["", r["rank"], r["label"], r["played"], r["wins"], r["losses"], r["pf"], r["pa"], r["nrr"]])
+    if not wb.sheetnames:
+        wb.create_sheet("Results")
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    safe_name = "".join(c if c.isalnum() or c in "-_" else "_" for c in t.get("name", "tournament"))
+    suffix = f"round-{int(round)}" if round else "all-rounds"
+    return StreamingResponse(
+        buf,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="{safe_name}-results-{suffix}.xlsx"'},
+    )
+
+
 @app.get("/tournaments/{tournament_id}/qualifiers.xlsx")
 def qualifiers_export_xlsx(request: Request, tournament_id: str):
     """Excel report: qualified teams per group, full standings, and every group match score."""
