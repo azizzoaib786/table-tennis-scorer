@@ -252,7 +252,31 @@
     {% endif %}
 
     <!-- Create pair (singles/doubles) -->
+    {% set teams = advancing_teams(tournament, r.round_num) if (tournament.format == 'doubles') else [] %}
+    {% if user and user.is_admin and (teams|length) >= 2 %}
+    <form hx-post="/tournaments/{{ tournament.tournament_id }}/rounds/{{ r.round_num }}/pairs/teams"
+          hx-target="#tournament-body" hx-swap="innerHTML"
+          class="mb-3 p-3 bg-teal-50 rounded-xl border border-teal-200 space-y-2">
+      <div class="text-xs font-bold text-teal-900">🤝 Team vs Team ({{ teams|length }} teams available)</div>
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+        <select name="team_a" required class="rounded-lg border-2 border-teal-200 px-3 py-2 text-sm">
+          <option value="">— Team A —</option>
+          {% for tm in teams %}<option value="{{ tm.key }}">{{ tm.label }}</option>{% endfor %}
+        </select>
+        <select name="team_b" required class="rounded-lg border-2 border-teal-200 px-3 py-2 text-sm">
+          <option value="">— Team B —</option>
+          {% for tm in teams %}<option value="{{ tm.key }}">{{ tm.label }}</option>{% endfor %}
+        </select>
+      </div>
+      <div class="flex gap-2">
+        <input name="table_number" type="number" min="0" placeholder="Table (optional)" class="w-36 rounded-lg border-2 border-teal-200 px-3 py-2 text-sm"/>
+        <button class="flex-1 rounded-lg bg-gradient-to-r from-teal-600 to-emerald-600 text-white font-bold px-3 py-2 text-sm">+ Add match</button>
+      </div>
+    </form>
+    {% endif %}
     {% if user and user.is_admin and pool and (pool|length) >= 2 %}
+    <details class="mb-3"{% if tournament.format != 'doubles' or (teams|length) < 2 %} open{% endif %}>
+    <summary class="cursor-pointer text-xs font-bold text-emerald-800">👤 Pick individual players instead</summary>
     <form
       hx-post="/tournaments/{{ tournament.tournament_id }}/rounds/{{ r.round_num }}/pairs"
       hx-target="#tournament-body"
@@ -321,6 +345,7 @@
         if (changed.name === 'participant_b')  autoPair('participant_b',  'participant_b2');
       };
     </script>
+    </details>
 
     <details class="mb-3">
       <summary class="cursor-pointer text-xs font-bold text-emerald-800">⬆️ Bulk paste pairings</summary>

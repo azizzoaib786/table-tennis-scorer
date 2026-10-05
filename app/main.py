@@ -2987,6 +2987,86 @@ def add_pair(request: Request, tournament_id: str, round_num: int,
     })
 
 
+def _advancing_teams(t: Dict[str, Any], round_num: int) -> List[Dict[str, Any]]:
+    """Doubles teams (as formed in earlier rounds) whose two players are both
+    eligible for `round_num`, minus teams already paired in that round.
+    Each item: {"key": "idA,idB", "label": str}."""
+    allowed = {p["id"] for p in _advancing_participants(t, int(round_num))}
+    rounds = t.get("rounds") or []
+    used: set = set()
+    for r in rounds:
+        if int(r.get("round_num", 0)) == int(round_num):
+            for m in r.get("matches") or []:
+                for s in ("a", "b"):
+                    if m.get(f"{s}_id"):
+                        used.add(m[f"{s}_id"])
+                    if m.get(f"{s}2_id"):
+                        used.add(m[f"{s}2_id"])
+    seen: set = set()
+    teams: List[Dict[str, Any]] = []
+    for r in rounds:
+        if int(r.get("round_num", 0)) >= int(round_num):
+            continue
+        for m in r.get("matches") or []:
+            if m.get("match_type") != "doubles":
+                continue
+            for s in ("a", "b"):
+                p1, p2 = m.get(f"{s}_id"), m.get(f"{s}2_id")
+                if not p1 or not p2:
+                    continue
+                key = frozenset((p1, p2))
+                if key in seen:
+                    continue
+                seen.add(key)
+                if p1 in allowed and p2 in allowed and p1 not in used and p2 not in used:
+                    label, _ = _side_label(t, m, s)
+                    teams.append({"key": f"{p1},{p2}", "label": label})
+    teams.sort(key=lambda x: x["label"].lower())
+    return teams
+
+
+templates.env.globals["advancing_teams"] = _advancing_teams
+
+
+@app.post("/tournaments/{tournament_id}/rounds/{round_num}/pairs/teams", response_class=HTMLResponse)
+def add_team_pair(request: Request, tournament_id: str, round_num: int,
+                  team_a: str = Form(...), team_b: str = Form(...),
+                  table_number: str = Form("")):
+    """Doubles: pair two existing teams (kept from earlier rounds)."""
+    user, t = check_tournament_access(request, tournament_id)
+    avail = {x["key"] for x in _advancing_teams(t, int(round_num))}
+    if team_a not in avail or team_b not in avail or team_a == team_b:
+        raise HTTPException(400, "Pick two different available teams")
+    by_id = {p["id"]: p for p in t.get("participants", [])}
+    a1, a2 = team_a.split(",")
+    b1, b2 = team_b.split(",")
+    if not all(i in by_id for i in (a1, a2, b1, b2)):
+        raise HTTPException(400, "Unknown participant in team")
+    rounds = t.get("rounds", [])
+    target_round = next((r for r in rounds if int(r.get("round_num", 0)) == int(round_num)), None)
+    if not target_round:
+        raise HTTPException(404, "Round not found")
+    matches_list = target_round.setdefault("matches", [])
+    slot = (max((int(s.get("slot", 0)) for s in matches_list), default=0)) + 1
+    try:
+        table_num = int(table_number) if str(table_number).strip() else 0
+    except ValueError:
+        table_num = 0
+    matches_list.append({
+        "slot": slot, "match_type": "doubles",
+        "a_name": by_id[a1]["name"], "a_id": a1, "a2_name": by_id[a2]["name"], "a2_id": a2,
+        "b_name": by_id[b1]["name"], "b_id": b1, "b2_name": by_id[b2]["name"], "b2_id": b2,
+        "table_number": table_num, "match_id": "", "winner": "", "winner_name": "",
+    })
+    update_tournament(tournament_id, "SET rounds = :r", {":r": rounds})
+    t2 = must_tournament(tournament_id)
+    return templates.TemplateResponse("partials/tournament_body.html", {
+        "request": request, "user": user, "tournament": t2,
+        "roster": list_roster(),
+        "flash": f"✅ Pairing added: {by_id[a1]['name']}/{by_id[a2]['name']} vs {by_id[b1]['name']}/{by_id[b2]['name']}",
+    })
+
+
 def _find_participant_by_name(participants: List[Dict[str, Any]], name: str) -> Optional[Dict[str, Any]]:
     """Case-insensitive lookup among tournament participants."""
     key = name.strip().lower()
