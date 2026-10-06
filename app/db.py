@@ -534,7 +534,7 @@ def _new_booking_meta() -> Dict[str, str]:
 
 
 def create_practice_half_booking(date: str, start_time: str, end_time: str, name: str,
-                                 phone: str, its: str, partner_name: str
+                                 phone: str, its: str, partner_name: str, team_name: str = ""
                                  ) -> Tuple[Optional[Dict[str, Any]], Optional[str]]:
     """Book ONE side of a table for a doubles team (booker + partner).
 
@@ -577,6 +577,7 @@ def create_practice_half_booking(date: str, start_time: str, end_time: str, name
             "phone": phone,
             "its": its,
             "partner_name": partner_name,
+            "team_name": team_name,
             "team": [name, partner_name],
             "date": date,
             "start_time": start_time,
@@ -595,7 +596,8 @@ def create_practice_half_booking(date: str, start_time: str, end_time: str, name
 
 
 def create_practice_full_booking(date: str, start_time: str, end_time: str, name: str,
-                                 phone: str, its: str, players: List[str]
+                                 phone: str, its: str, players: List[str],
+                                 team_name: str = "", team2_name: str = ""
                                  ) -> Tuple[Optional[Dict[str, Any]], Optional[str]]:
     """Book a whole table for 4 players (players[0] is the booker; players
     0-1 take side 1, players 2-3 take side 2). Both sides are claimed in one
@@ -614,6 +616,9 @@ def create_practice_full_booking(date: str, start_time: str, end_time: str, name
                 "phone": phone,
                 "its": its,
                 "players": players,
+                "team_name": team_name if side == 1 else team2_name,
+                "team1_name": team_name,
+                "team2_name": team2_name,
                 "team": players[(side - 1) * 2:(side - 1) * 2 + 2],
                 "date": date,
                 "start_time": start_time,
@@ -663,6 +668,21 @@ def get_practice_booking_by_reference(reference_number: str) -> Optional[Dict[st
     return items[0]
 
 
+def get_practice_opponent(booking: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """For a half-table booking: the team on the other side of the same table
+    and time slot, if one has booked ({"team_name", "players"}); else None."""
+    if not booking or booking.get("booking_type") != "half" or "table_no" not in booking:
+        return None
+    other_side = 2 if int(booking["side"]) == 1 else 1
+    resp = practice_bookings_tbl.get_item(Key={"slot_key": _practice_slot_key(
+        booking["date"], booking["start_time"], booking["end_time"],
+        int(booking["table_no"]), other_side)})
+    row = resp.get("Item")
+    if not row:
+        return None
+    return {"team_name": row.get("team_name", ""), "players": row.get("team") or [row.get("name", "")]}
+
+
 def list_all_practice_bookings() -> List[Dict[str, Any]]:
     """One entry per booking (a full-table booking occupies two side rows)."""
     bookings: Dict[str, Dict[str, Any]] = {}
@@ -687,7 +707,8 @@ def search_practice_bookings(query: str) -> List[Dict[str, Any]]:
 
     def haystack(b: Dict[str, Any]) -> str:
         parts = [b.get("name", ""), b.get("phone", ""), b.get("its", ""),
-                 b.get("reference_number", ""), b.get("partner_name", "")]
+                 b.get("reference_number", ""), b.get("partner_name", ""),
+                 b.get("team_name", ""), b.get("team1_name", ""), b.get("team2_name", "")]
         parts.extend(b.get("players", []) or [])
         return " ".join(str(p) for p in parts).lower()
 

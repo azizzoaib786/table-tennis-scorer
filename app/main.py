@@ -31,6 +31,7 @@ from .db import (
     list_all_registrations, update_registration_paid, delete_registration,
     find_registration_by_name, find_registration_by_its, put_registrations_transact,
     create_practice_half_booking, create_practice_full_booking, get_practice_booking_by_reference,
+    get_practice_opponent,
     list_all_practice_bookings, search_practice_bookings,
     get_practice_slot_availability, get_practice_tables_grid, delete_practice_booking_by_id,
     get_practice_date_ranges, set_practice_date_ranges, is_practice_date_open,
@@ -957,6 +958,13 @@ def _practice_date_ctx() -> Dict[str, Any]:
     }
 
 
+def _with_opponent(booking: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    """Copy of a half-table booking plus the team sharing its table (if any)."""
+    if not booking:
+        return booking
+    return {**booking, "opponent": get_practice_opponent(booking)}
+
+
 @app.get("/booking", response_class=HTMLResponse)
 def booking_page(request: Request, ref: str = "", confirmed: str = ""):
     """Landing page: choose half table / full table, plus 'find my booking'."""
@@ -964,10 +972,11 @@ def booking_page(request: Request, ref: str = "", confirmed: str = ""):
     searched = False
     if ref.strip():
         searched = True
-        found = get_practice_booking_by_reference(ref)
+        found = _with_opponent(get_practice_booking_by_reference(ref))
     # Post/Redirect/Get: a successful booking redirects here so a browser
     # refresh re-runs this harmless GET instead of re-submitting the form.
-    confirmed_booking = get_practice_booking_by_reference(confirmed) if confirmed.strip() else None
+    confirmed_booking = _with_opponent(
+        get_practice_booking_by_reference(confirmed) if confirmed.strip() else None)
     return templates.TemplateResponse("booking.html", {
         "request": request,
         **_practice_date_ctx(),
@@ -1005,11 +1014,15 @@ def booking_full_page(request: Request):
 @app.post("/booking/half", response_class=HTMLResponse)
 def booking_half_submit(request: Request, name: str = Form(...), phone: str = Form(...),
                         its: str = Form(...), partner_name: str = Form(...),
+                        team_name: str = Form(""),
                         date: str = Form(...), time_range: str = Form("")):
     form = {"name": name.strip(), "phone": phone.strip(), "its": its.strip(),
-            "partner_name": partner_name.strip(), "date": date.strip(), "time_range": time_range.strip()}
+            "partner_name": partner_name.strip(), "team_name": team_name.strip(),
+            "date": date.strip(), "time_range": time_range.strip()}
     err = _validate_practice_common(form["name"], form["phone"], form["its"], form["date"],
                                     form["time_range"], get_practice_date_ranges())
+    if not err and not form["team_name"]:
+        err = "Please enter your team name."
     if not err and not form["partner_name"]:
         err = "Please enter your partner's name."
     if err:
@@ -1017,7 +1030,8 @@ def booking_half_submit(request: Request, name: str = Form(...), phone: str = Fo
 
     start_time, end_time = _parse_practice_time_range(form["time_range"])
     booking, problem = create_practice_half_booking(
-        form["date"], start_time, end_time, form["name"], form["phone"], form["its"], form["partner_name"])
+        form["date"], start_time, end_time, form["name"], form["phone"], form["its"],
+        form["partner_name"], form["team_name"])
     if problem == "duplicate":
         return _render_booking_form(request, "half", form,
             "This ITS number already has a half-table booking for that time slot. "
@@ -1031,9 +1045,11 @@ def booking_half_submit(request: Request, name: str = Form(...), phone: str = Fo
 @app.post("/booking/full", response_class=HTMLResponse)
 def booking_full_submit(request: Request, name: str = Form(...), phone: str = Form(...),
                         its: str = Form(...), player2: str = Form(...), player3: str = Form(...),
-                        player4: str = Form(...), date: str = Form(...), time_range: str = Form("")):
+                        player4: str = Form(...), team_name: str = Form(""), team2_name: str = Form(""),
+                        date: str = Form(...), time_range: str = Form("")):
     form = {"name": name.strip(), "phone": phone.strip(), "its": its.strip(),
             "player2": player2.strip(), "player3": player3.strip(), "player4": player4.strip(),
+            "team_name": team_name.strip(), "team2_name": team2_name.strip(),
             "date": date.strip(), "time_range": time_range.strip()}
     err = _validate_practice_common(form["name"], form["phone"], form["its"], form["date"],
                                     form["time_range"], get_practice_date_ranges())
@@ -1045,7 +1061,8 @@ def booking_full_submit(request: Request, name: str = Form(...), phone: str = Fo
     start_time, end_time = _parse_practice_time_range(form["time_range"])
     players = [form["name"], form["player2"], form["player3"], form["player4"]]
     booking, problem = create_practice_full_booking(
-        form["date"], start_time, end_time, form["name"], form["phone"], form["its"], players)
+        form["date"], start_time, end_time, form["name"], form["phone"], form["its"], players,
+        form["team_name"], form["team2_name"])
     if problem == "full":
         return _render_booking_form(request, "full", form,
             f"Sorry, no free table is left for {start_time}-{end_time} on {form['date']}. "

@@ -76,7 +76,7 @@
               <div class="rounded-lg px-2 py-1 mb-1 text-xs {{ 'bg-emerald-50 border border-emerald-300 text-emerald-900' if side else 'bg-slate-50 border border-dashed border-slate-300 text-slate-500' }}">
                 <span class="font-bold">Side {{ loop.index }}:</span>
                 {% if side %}
-                  {{ (side.team or [side.name])|join(' & ') }}
+                  {% if side.team_name %}<span class="font-bold">{{ side.team_name }}</span> — {% endif %}{{ (side.team or [side.name])|join(' & ') }}
                   <span class="text-[11px] opacity-80">· {{ 'Full' if side.booking_type == 'full' else 'Half' }} · booker ITS {{ side.its or '-' }} · {{ side.reference_number }}</span>
                 {% else %}Open{% endif %}
               </div>
@@ -119,7 +119,7 @@
                 <td class="py-2 pr-3 font-semibold">{{ b.name }}</td>
                 <td class="py-2 pr-3 font-mono">{{ b.its or '-' }}</td>
                 <td class="py-2 pr-3">{{ b.phone }}</td>
-                <td class="py-2 pr-3">{% if b.booking_type == 'full' %}{{ (b.players or [])|join(', ') }}{% elif b.booking_type == 'half' %}{{ b.name }} &amp; {{ b.partner_name }}{% else %}-{% endif %}</td>
+                <td class="py-2 pr-3">{% if b.booking_type == 'full' %}{% if b.team1_name or b.team2_name %}<span class="font-bold">{{ [b.team1_name, b.team2_name]|select|join(' vs ') }}</span><br>{% endif %}{{ (b.players or [])|join(', ') }}{% elif b.booking_type == 'half' %}{% if b.team_name %}<span class="font-bold">{{ b.team_name }}</span><br>{% endif %}{{ b.name }} &amp; {{ b.partner_name }}{% else %}-{% endif %}</td>
                 <td class="py-2 pr-3 font-mono text-xs">{{ b.reference_number }}</td>
                 <td class="py-2 pr-3">
                   <form method="post" action="/admin/bookings/{{ b.booking_id }}/delete" onsubmit="return confirm('Cancel this booking?');">

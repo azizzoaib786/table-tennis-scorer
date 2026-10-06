@@ -2,10 +2,21 @@
 <p class="text-sm font-semibold">{{ b.date }} · {{ b.start_time }}–{{ b.end_time }}</p>
 {% if b.booking_type == 'full' %}
 <p class="text-sm">Table {{ b.table_no }} · Full table</p>
+{% if b.team1_name and b.team2_name %}
+<p class="text-sm font-semibold">{{ b.team1_name }} <span class="font-normal">vs</span> {{ b.team2_name }}</p>
+{% elif b.team1_name or b.team2_name %}
+<p class="text-sm font-semibold">{{ b.team1_name or b.team2_name }}</p>
+{% endif %}
 <p class="text-sm">{{ (b.players or [])|join(', ') }}</p>
 {% elif b.booking_type == 'half' %}
 <p class="text-sm">Table {{ b.table_no }} · Side {{ b.side }}</p>
+{% if b.team_name %}<p class="text-sm font-semibold">Team: {{ b.team_name }}</p>{% endif %}
 <p class="text-sm">{{ b.name }} &amp; {{ b.partner_name }}</p>
+{% if b.opponent %}
+<p class="text-sm mt-1">🆚 Playing against: <span class="font-semibold">{{ b.opponent.team_name or (b.opponent.players|join(' & ')) }}</span></p>
+{% else %}
+<p class="text-xs mt-1 opacity-80">Waiting for another team to take the other side.</p>
+{% endif %}
 {% else %}
 <p class="text-sm">{{ b.name }}</p>
 {% endif %}
