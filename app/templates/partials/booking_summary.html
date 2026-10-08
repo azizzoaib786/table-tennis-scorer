@@ -1,5 +1,5 @@
 {# Booking details shared by the confirmation card and the reference lookup. Expects `b`. #}
-<p class="text-sm font-semibold">{{ b.date }} · {{ b.start_time }}–{{ b.end_time }}</p>
+<p class="text-sm font-semibold">{{ b.date }} · {{ b.start_time|t12 }}–{{ b.end_time|t12 }}</p>
 {% if b.booking_type == 'full' %}
 <p class="text-sm">Table {{ b.table_no }} · Full table</p>
 {% if b.team1_name and b.team2_name %}

@@ -7,6 +7,8 @@ from boto3.dynamodb.conditions import Key, Attr
 from boto3.dynamodb.types import TypeSerializer
 from typing import Any, Dict, List, Optional, Tuple
 
+from .allowed_its import GENERIC_ITS
+
 # AWS configuration
 AWS_REGION = os.getenv("AWS_REGION", "eu-west-1")
 MATCHES_TABLE = os.getenv("MATCHES_TABLE", "tt_matches")
@@ -482,7 +484,16 @@ def find_registration_by_name(tournament_id: str, name: str) -> Optional[Dict[st
 # bookings are exempt from that rule. Lock rows carry kind="lock" and the same
 # booking_id, so cancelling a booking removes its lock too.
 PRACTICE_TABLES = 4
-PRACTICE_TIME_RANGES = [("10:00", "11:00"), ("11:00", "12:00"), ("12:00", "13:00")]
+PRACTICE_TIME_RANGES = [("19:30", "20:30"), ("20:30", "21:30")]
+
+
+def format_time_12h(value: str) -> str:
+    """"19:30" -> "7:30pm" (returns the input unchanged if it can't be parsed)."""
+    try:
+        h, m = (int(x) for x in str(value).split(":"))
+    except ValueError:
+        return str(value)
+    return f"{(h % 12) or 12}:{m:02d}{'am' if h < 12 else 'pm'}"
 
 
 def _practice_slot_key(date: str, start_time: str, end_time: str, table_no: int, side: int) -> str:
@@ -544,14 +555,16 @@ def create_practice_half_booking(date: str, start_time: str, end_time: str, name
     whole tables stay free for full-table bookings."""
     meta = _new_booking_meta()
     lock_key = _practice_its_lock_key(date, start_time, end_time, its)
+    use_lock = its != GENERIC_ITS     # the shared fallback ITS can book repeatedly
     try:
-        practice_bookings_tbl.put_item(
-            Item={
-                "slot_key": lock_key, "kind": "lock", "booking_id": meta["booking_id"],
-                "its": its, "date": date, "start_time": start_time, "end_time": end_time,
-            },
-            ConditionExpression="attribute_not_exists(slot_key)",
-        )
+        if use_lock:
+            practice_bookings_tbl.put_item(
+                Item={
+                    "slot_key": lock_key, "kind": "lock", "booking_id": meta["booking_id"],
+                    "its": its, "date": date, "start_time": start_time, "end_time": end_time,
+                },
+                ConditionExpression="attribute_not_exists(slot_key)",
+            )
     except ClientError as e:
         if _is_conditional_failure(e):
             return None, "duplicate"
@@ -591,7 +604,8 @@ def create_practice_half_booking(date: str, start_time: str, end_time: str, name
                 continue
             raise
 
-    practice_bookings_tbl.delete_item(Key={"slot_key": lock_key})   # nothing left: release guard
+    if use_lock:
+        practice_bookings_tbl.delete_item(Key={"slot_key": lock_key})   # nothing left: release guard
     return None, "full"
 
 
@@ -737,7 +751,7 @@ def get_practice_tables_grid(date: str) -> List[Dict[str, Any]]:
     for s, e in PRACTICE_TIME_RANGES:
         state = _practice_range_state(items, date, s, e)
         grid.append({
-            "label": f"{s}–{e}",
+            "label": f"{format_time_12h(s)} – {format_time_12h(e)}",
             "tables": [
                 {"table_no": t, "sides": [state[t].get(1), state[t].get(2)]}
                 for t in sorted(state)

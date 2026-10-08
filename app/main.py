@@ -35,10 +35,11 @@ from .db import (
     list_all_practice_bookings, search_practice_bookings,
     get_practice_slot_availability, get_practice_tables_grid, delete_practice_booking_by_id,
     get_practice_date_ranges, set_practice_date_ranges, is_practice_date_open,
-    PRACTICE_TIME_RANGES, PRACTICE_TABLES,
+    PRACTICE_TIME_RANGES, PRACTICE_TABLES, format_time_12h,
 )
 from .logic import compute_state, player_name
 from .auth import hash_password, verify_password, create_session_token, verify_session_token
+from .allowed_its import ALLOWED_ITS
 
 app = FastAPI(title="Table Tennis Scorer")
 templates = Jinja2Templates(directory="app/templates")
@@ -138,6 +139,7 @@ def _presigned_photo_url(key: str) -> Optional[str]:
         return None
 
 
+templates.env.filters["t12"] = format_time_12h
 templates.env.globals["photo_url"] = _presigned_photo_url
 
 
@@ -941,6 +943,8 @@ def _validate_practice_common(name: str, phone: str, its: str, date: str, time_r
         return "Please enter a valid number with country code, e.g. +971568103175."
     if not PRACTICE_ITS_RE.match(its):
         return "ITS number must be exactly 8 digits, e.g. 11112222."
+    if its not in ALLOWED_ITS:
+        return "This ITS number is not on the approved list. Check the number, or use 10111011 if you have a problem."
     if _parse_practice_time_range(time_range) is None:
         return "Please choose a valid time slot."
     if not is_practice_date_open(date, date_ranges):

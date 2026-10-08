@@ -113,7 +113,7 @@
               {% for b in bookings %}
               <tr class="border-b border-emerald-100">
                 <td class="py-2 pr-3">{{ b.date }}</td>
-                <td class="py-2 pr-3">{{ b.start_time }}–{{ b.end_time }}</td>
+                <td class="py-2 pr-3">{{ b.start_time|t12 }}–{{ b.end_time|t12 }}</td>
                 <td class="py-2 pr-3">{{ 'Full' if b.booking_type == 'full' else ('Half' if b.booking_type == 'half' else 'Old slot') }}</td>
                 <td class="py-2 pr-3">{% if b.table_no %}T{{ b.table_no }}{{ '' if b.booking_type == 'full' else ' / S' ~ b.side }}{% else %}{{ b.slot_no or '-' }}{% endif %}</td>
                 <td class="py-2 pr-3 font-semibold">{{ b.name }}</td>

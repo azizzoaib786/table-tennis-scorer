@@ -84,7 +84,7 @@
               <label class="flex items-center justify-between rounded-xl border-2 border-emerald-200 px-4 py-3 cursor-pointer hover:border-emerald-400" data-label="{{ start }}-{{ end }}">
                 <span class="flex items-center gap-2 font-semibold text-emerald-900">
                   <input type="radio" name="time_range" value="{{ start }}-{{ end }}" required class="accent-emerald-600" {% if form.time_range == start ~ '-' ~ end %}checked{% endif %}/>
-                  {{ start }} – {{ end }}
+                  {{ start|t12 }} – {{ end|t12 }}
                 </span>
                 <span class="text-xs font-bold text-emerald-700" data-slot="{{ start }}-{{ end }}">{{ tables }} tables</span>
               </label>
