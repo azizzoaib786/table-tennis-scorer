@@ -42,11 +42,13 @@
           </div>
           <div>
             <label class="block text-sm font-bold text-emerald-900 mb-1">Your ITS number</label>
-            <input type="text" name="its" required inputmode="numeric" pattern="[0-9]{8}" maxlength="8" value="{{ form.its or '' }}" title="8 digits, e.g. 11112222" placeholder="e.g. 11112222" class="w-full rounded-xl border-2 border-emerald-200 focus:border-emerald-400 px-4 py-3 font-mono"/>
+            <input type="text" name="its" id="its-input" required inputmode="numeric" pattern="[0-9]{8}" maxlength="8" value="{{ form.its or '' }}" title="8 digits, e.g. 11112222" placeholder="e.g. 11112222" class="w-full rounded-xl border-2 border-emerald-200 focus:border-emerald-400 px-4 py-3 font-mono" aria-invalid="false"/>
+            <div id="its-error" class="hidden mt-1 text-xs font-medium text-rose-600">ITS must be exactly 8 digits.</div>
           </div>
           <div>
             <label class="block text-sm font-bold text-emerald-900 mb-1">Your number</label>
-            <input type="tel" name="phone" required pattern="\+[0-9]{12,15}" value="{{ form.phone or '' }}" title="Include country code, e.g. +971568103175 (minimum 12 digits after +)" placeholder="e.g. +971568103175" class="w-full rounded-xl border-2 border-emerald-200 focus:border-emerald-400 px-4 py-3"/>
+            <input type="tel" name="phone" id="phone-input" required pattern="\+[0-9]{12,15}" value="{{ form.phone or '' }}" title="Include country code, e.g. +971568103175 (minimum 12 digits after +)" placeholder="e.g. +971568103175" class="w-full rounded-xl border-2 border-emerald-200 focus:border-emerald-400 px-4 py-3" aria-invalid="false"/>
+            <div id="phone-error" class="hidden mt-1 text-xs font-medium text-rose-600">Use format +971XXXXXXXXX.</div>
           </div>
 
           {% if mode == 'half' %}
@@ -103,9 +105,70 @@
     {% if date_ranges %}
     <script>
       const mode = {{ mode|tojson }};
+      const form = document.getElementById('booking-form');
       const dateInput = document.getElementById('booking-date');
+      const itsInput = document.getElementById('its-input');
+      const phoneInput = document.getElementById('phone-input');
+      const itsError = document.getElementById('its-error');
+      const phoneError = document.getElementById('phone-error');
       const slotLabels = document.querySelectorAll('#slot-options [data-slot]');
       const dateRanges = {{ date_ranges|tojson }};
+
+      function setFieldState(input, errorEl, isValid, message) {
+        input.classList.remove('border-emerald-200', 'border-rose-300');
+        input.classList.add(isValid ? 'border-emerald-200' : 'border-rose-300');
+        input.setAttribute('aria-invalid', String(!isValid));
+        if (!isValid) {
+          errorEl.textContent = message;
+          errorEl.classList.remove('hidden');
+        } else {
+          errorEl.classList.add('hidden');
+        }
+      }
+
+      function validateIts() {
+        const value = (itsInput.value || '').replace(/\D/g, '');
+        const valid = /^\d{8}$/.test(value);
+        setFieldState(itsInput, itsError, valid, 'ITS must be exactly 8 digits.');
+        return valid;
+      }
+
+      function validatePhone() {
+        const value = (phoneInput.value || '').trim();
+        const valid = /^\+[0-9]{12,15}$/.test(value);
+        setFieldState(phoneInput, phoneError, valid, 'Use format +971XXXXXXXXX.');
+        return valid;
+      }
+
+      function validateFormFields() {
+        const okIts = validateIts();
+        const okPhone = validatePhone();
+        return okIts && okPhone;
+      }
+
+      itsInput.addEventListener('input', () => {
+        const value = itsInput.value.replace(/\D/g, '').slice(0, 8);
+        itsInput.value = value;
+        validateIts();
+      });
+      phoneInput.addEventListener('input', () => {
+        const value = phoneInput.value.trim();
+        if (!value) {
+          setFieldState(phoneInput, phoneError, true, '');
+          return;
+        }
+        validatePhone();
+      });
+      itsInput.addEventListener('blur', validateIts);
+      phoneInput.addEventListener('blur', validatePhone);
+
+      form.addEventListener('submit', (event) => {
+        if (!validateFormFields()) {
+          event.preventDefault();
+          if (!validateIts()) itsInput.focus();
+          else phoneInput.focus();
+        }
+      });
 
       // min/max already grey out everything outside the overall range in the
       // calendar; this also blocks dates in gaps between separate open ranges
