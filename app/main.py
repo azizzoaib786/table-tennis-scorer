@@ -944,7 +944,7 @@ def _validate_practice_common(name: str, phone: str, its: str, date: str, time_r
     if not PRACTICE_ITS_RE.match(its):
         return "ITS number must be exactly 8 digits, e.g. 11112222."
     if its not in ALLOWED_ITS:
-        return "This ITS number is not on the approved list. Check the number, or use 10111011 if you have a problem."
+        return "This ITS number is not on the approved list. Please check the number or contact the organizers."
     if _parse_practice_time_range(time_range) is None:
         return "Please choose a valid time slot."
     if not is_practice_date_open(date, date_ranges):
