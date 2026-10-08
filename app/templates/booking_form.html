@@ -74,7 +74,7 @@
             <label class="block text-sm font-bold text-emerald-900 mb-1">Date</label>
             <input type="date" name="date" id="booking-date" required
                    min="{{ date_min }}" max="{{ date_max }}" value="{{ form.date or date_min }}"
-                   class="w-full rounded-xl border-2 border-emerald-200 focus:border-emerald-400 px-4 py-3 bg-white"/>
+                   class="block w-full min-w-0 max-w-full box-border appearance-none rounded-xl border-2 border-emerald-200 focus:border-emerald-400 px-4 py-3 bg-white" style="-webkit-appearance:none;appearance:none;min-height:3.25rem"/>
             <p class="text-xs text-emerald-700 mt-1">Available: {% for r in date_ranges %}{{ r.start if r.start == r.end else r.start ~ ' to ' ~ r.end }}{{ ', ' if not loop.last }}{% endfor %}</p>
           </div>
           <div>
