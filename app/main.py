@@ -1026,6 +1026,8 @@ def booking_full_submit(request: Request, name: str = Form(...), phone: str = Fo
             "date": date.strip(), "time_range": time_range.strip()}
     err = _validate_practice_common(form["name"], form["phone"], form["its"], form["date"],
                                     form["time_range"], get_practice_date_ranges())
+    if not err and not form["team_name"]:
+        err = "Please enter your team name."
     if not err and not form["player2"]:
         err = "Please enter your partner's name (player 2)."
     if err:

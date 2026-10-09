@@ -64,7 +64,7 @@
           {% else %}
           <div class="rounded-2xl border-2 border-emerald-100 bg-emerald-50 p-3 space-y-3">
             <p class="text-xs font-bold uppercase text-emerald-700">Your team (you + player 2)</p>
-            <input type="text" name="team_name" value="{{ form.team_name or '' }}" placeholder="Your team name (optional)" class="w-full rounded-xl border-2 border-emerald-200 focus:border-emerald-400 px-4 py-3 bg-white"/>
+            <input type="text" name="team_name" required value="{{ form.team_name or '' }}" placeholder="Your team name" class="w-full rounded-xl border-2 border-emerald-200 focus:border-emerald-400 px-4 py-3 bg-white"/>
             <input type="text" name="player2" required value="{{ form.player2 or '' }}" placeholder="Player 2 (your partner)" class="w-full rounded-xl border-2 border-emerald-200 focus:border-emerald-400 px-4 py-3 bg-white"/>
             <p class="text-xs font-bold uppercase text-emerald-700">Other team (players 3 + 4)</p>
             <input type="text" name="team2_name" value="{{ form.team2_name or '' }}" placeholder="Other team's name (optional)" class="w-full rounded-xl border-2 border-emerald-200 focus:border-emerald-400 px-4 py-3 bg-white"/>
