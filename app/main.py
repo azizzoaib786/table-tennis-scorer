@@ -1017,8 +1017,8 @@ def booking_full_page(request: Request):
 
 @app.post("/booking/full", response_class=HTMLResponse)
 def booking_full_submit(request: Request, name: str = Form(...), phone: str = Form(...),
-                        its: str = Form(...), player2: str = Form(...), player3: str = Form(...),
-                        player4: str = Form(...), team_name: str = Form(""), team2_name: str = Form(""),
+                        its: str = Form(...), player2: str = Form(...), player3: str = Form(""),
+                        player4: str = Form(""), team_name: str = Form(""), team2_name: str = Form(""),
                         date: str = Form(...), time_range: str = Form("")):
     form = {"name": name.strip(), "phone": phone.strip(), "its": its.strip(),
             "player2": player2.strip(), "player3": player3.strip(), "player4": player4.strip(),
@@ -1026,8 +1026,8 @@ def booking_full_submit(request: Request, name: str = Form(...), phone: str = Fo
             "date": date.strip(), "time_range": time_range.strip()}
     err = _validate_practice_common(form["name"], form["phone"], form["its"], form["date"],
                                     form["time_range"], get_practice_date_ranges())
-    if not err and not (form["player2"] and form["player3"] and form["player4"]):
-        err = "A full table needs the names of all 4 players."
+    if not err and not form["player2"]:
+        err = "Please enter your partner's name (player 2)."
     if err:
         return _render_booking_form(request, "full", form, err, 400)
 

@@ -22,7 +22,7 @@
           <p class="text-emerald-700 text-sm font-medium">Doubles — you and your partner get one side of a table. Another team takes the other side.</p>
           {% else %}
           <h1 class="text-2xl font-bold text-emerald-900">Full Table</h1>
-          <p class="text-emerald-700 text-sm font-medium">Book a whole table for 4 players (two doubles teams).</p>
+          <p class="text-emerald-700 text-sm font-medium">Book a whole table (two doubles teams). Players 3 and 4 are optional.</p>
           <p class="mt-2 inline-block rounded-full bg-emerald-50 border-2 border-emerald-300 px-4 py-1 text-sm font-extrabold text-emerald-900">💰 Cost: {{ price }} AED / hour</p>
           {% endif %}
         </div>
@@ -68,8 +68,8 @@
             <input type="text" name="player2" required value="{{ form.player2 or '' }}" placeholder="Player 2 (your partner)" class="w-full rounded-xl border-2 border-emerald-200 focus:border-emerald-400 px-4 py-3 bg-white"/>
             <p class="text-xs font-bold uppercase text-emerald-700">Other team (players 3 + 4)</p>
             <input type="text" name="team2_name" value="{{ form.team2_name or '' }}" placeholder="Other team's name (optional)" class="w-full rounded-xl border-2 border-emerald-200 focus:border-emerald-400 px-4 py-3 bg-white"/>
-            <input type="text" name="player3" required value="{{ form.player3 or '' }}" placeholder="Player 3" class="w-full rounded-xl border-2 border-emerald-200 focus:border-emerald-400 px-4 py-3 bg-white"/>
-            <input type="text" name="player4" required value="{{ form.player4 or '' }}" placeholder="Player 4" class="w-full rounded-xl border-2 border-emerald-200 focus:border-emerald-400 px-4 py-3 bg-white"/>
+            <input type="text" name="player3" value="{{ form.player3 or '' }}" placeholder="Player 3 (optional)" class="w-full rounded-xl border-2 border-emerald-200 focus:border-emerald-400 px-4 py-3 bg-white"/>
+            <input type="text" name="player4" value="{{ form.player4 or '' }}" placeholder="Player 4 (optional)" class="w-full rounded-xl border-2 border-emerald-200 focus:border-emerald-400 px-4 py-3 bg-white"/>
           </div>
           {% endif %}
 

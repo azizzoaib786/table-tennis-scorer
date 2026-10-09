@@ -7,7 +7,7 @@
 {% elif b.team1_name or b.team2_name %}
 <p class="text-sm font-semibold">{{ b.team1_name or b.team2_name }}</p>
 {% endif %}
-<p class="text-sm">{{ (b.players or [])|join(', ') }}</p>
+<p class="text-sm">{{ (b.players or [])|select|join(', ') }}</p>
 {% elif b.booking_type == 'half' %}
 <p class="text-sm">Table {{ b.table_no }} · Side {{ b.side }}</p>
 {% if b.team_name %}<p class="text-sm font-semibold">Team: {{ b.team_name }}</p>{% endif %}
