@@ -23,11 +23,12 @@
           {% else %}
           <h1 class="text-2xl font-bold text-emerald-900">Full Table</h1>
           <p class="text-emerald-700 text-sm font-medium">Book a whole table for 4 players (two doubles teams).</p>
+          <p class="mt-2 inline-block rounded-full bg-emerald-50 border-2 border-emerald-300 px-4 py-1 text-sm font-extrabold text-emerald-900">💰 Cost: {{ price }} AED / hour</p>
           {% endif %}
         </div>
 
         {% if error %}
-        <div class="mb-4 rounded-xl border-2 border-rose-300 bg-rose-50 text-rose-800 px-4 py-3 text-sm font-semibold">⚠️ {{ error }}{% if 'approved list' in error %} <a href="https://wa.me/971507291651" target="_blank" rel="noopener" class="underline text-emerald-700">WhatsApp +971 50 729 1651</a>{% endif %}</div>
+        <div class="mb-4 rounded-xl border-2 border-rose-300 bg-rose-50 text-rose-800 px-4 py-3 text-sm font-semibold">⚠️ {{ error }}</div>
         {% endif %}
 
         {% if not date_ranges %}

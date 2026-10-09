@@ -35,11 +35,11 @@ from .db import (
     list_all_practice_bookings, search_practice_bookings,
     get_practice_slot_availability, get_practice_tables_grid, delete_practice_booking_by_id,
     get_practice_date_ranges, set_practice_date_ranges, is_practice_date_open,
+    get_practice_price, set_practice_price,
     PRACTICE_TIME_RANGES, PRACTICE_TABLES, format_time_12h,
 )
 from .logic import compute_state, player_name
 from .auth import hash_password, verify_password, create_session_token, verify_session_token
-from .allowed_its import ALLOWED_ITS
 
 app = FastAPI(title="Table Tennis Scorer")
 templates = Jinja2Templates(directory="app/templates")
@@ -943,8 +943,6 @@ def _validate_practice_common(name: str, phone: str, its: str, date: str, time_r
         return "Please enter a valid number with country code, e.g. +971568103175."
     if not PRACTICE_ITS_RE.match(its):
         return "ITS number must be exactly 8 digits, e.g. 11112222."
-    if its not in ALLOWED_ITS:
-        return "This ITS number is not on the approved list. Please check the number or contact the organizers."
     if _parse_practice_time_range(time_range) is None:
         return "Please choose a valid time slot."
     if not is_practice_date_open(date, date_ranges):
@@ -957,6 +955,7 @@ def _practice_date_ctx() -> Dict[str, Any]:
     ranges = get_practice_date_ranges()
     return {
         "date_ranges": ranges,
+        "price": get_practice_price(),
         "date_min": min((r["start"] for r in ranges), default=""),
         "date_max": max((r["end"] for r in ranges), default=""),
     }
@@ -1005,45 +1004,15 @@ def _render_booking_form(request: Request, mode: str, form: Optional[Dict[str, s
     }, status_code=status)
 
 
-@app.get("/booking/half", response_class=HTMLResponse)
-def booking_half_page(request: Request):
-    return _render_booking_form(request, "half")
+@app.get("/booking/half")
+def booking_half_page():
+    # Half-table booking is discontinued — only full tables can be booked.
+    return RedirectResponse("/booking/full", status_code=303)
 
 
 @app.get("/booking/full", response_class=HTMLResponse)
 def booking_full_page(request: Request):
     return _render_booking_form(request, "full")
-
-
-@app.post("/booking/half", response_class=HTMLResponse)
-def booking_half_submit(request: Request, name: str = Form(...), phone: str = Form(...),
-                        its: str = Form(...), partner_name: str = Form(...),
-                        team_name: str = Form(""),
-                        date: str = Form(...), time_range: str = Form("")):
-    form = {"name": name.strip(), "phone": phone.strip(), "its": its.strip(),
-            "partner_name": partner_name.strip(), "team_name": team_name.strip(),
-            "date": date.strip(), "time_range": time_range.strip()}
-    err = _validate_practice_common(form["name"], form["phone"], form["its"], form["date"],
-                                    form["time_range"], get_practice_date_ranges())
-    if not err and not form["team_name"]:
-        err = "Please enter your team name."
-    if not err and not form["partner_name"]:
-        err = "Please enter your partner's name."
-    if err:
-        return _render_booking_form(request, "half", form, err, 400)
-
-    start_time, end_time = _parse_practice_time_range(form["time_range"])
-    booking, problem = create_practice_half_booking(
-        form["date"], start_time, end_time, form["name"], form["phone"], form["its"],
-        form["partner_name"], form["team_name"])
-    if problem == "duplicate":
-        return _render_booking_form(request, "half", form,
-            "This ITS number already has a half-table booking for that time slot. "
-            "Choose a different time, or book a full table instead.", 409)
-    if problem == "full":
-        return _render_booking_form(request, "half", form,
-            f"Sorry, no table side is left for {start_time}-{end_time} on {form['date']}. Please pick another slot.", 409)
-    return RedirectResponse(f"/booking?confirmed={booking['reference_number']}", status_code=303)
 
 
 @app.post("/booking/full", response_class=HTMLResponse)
@@ -1070,7 +1039,7 @@ def booking_full_submit(request: Request, name: str = Form(...), phone: str = Fo
     if problem == "full":
         return _render_booking_form(request, "full", form,
             f"Sorry, no free table is left for {start_time}-{end_time} on {form['date']}. "
-            "Please pick another slot or book half a table.", 409)
+            "Please pick another slot.", 409)
     return RedirectResponse(f"/booking?confirmed={booking['reference_number']}", status_code=303)
 
 
@@ -1099,10 +1068,66 @@ def admin_bookings(request: Request, q: str = "", dates_error: str = "", gdate: 
         "bookings": bookings,
         "q": q,
         "date_ranges": date_ctx["date_ranges"],
+        "price": date_ctx["price"],
         "dates_error": dates_error,
         "grid_date": grid_date,
         "grid": get_practice_tables_grid(grid_date) if grid_date else [],
     })
+
+
+@app.get("/admin/bookings.xlsx")
+def admin_bookings_xlsx(request: Request, q: str = ""):
+    require_admin(request)
+    try:
+        from openpyxl import Workbook
+        from openpyxl.styles import Font, PatternFill, Alignment
+    except ImportError:
+        raise HTTPException(500, "openpyxl not installed on the server — run `pip install -r requirements.txt`")
+
+    bookings = search_practice_bookings(q) if q.strip() else list_all_practice_bookings()
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Bookings"
+    ws.append(["Reference", "Date", "Time", "Table", "Booker", "Phone", "ITS",
+               "Team 1", "Player 1", "Player 2", "Team 2", "Player 3", "Player 4", "Booked at (UTC)"])
+    for b in bookings:
+        players = list(b.get("players") or [b.get("name", ""), b.get("partner_name", "")])
+        players += [""] * (4 - len(players))
+        ws.append([
+            b.get("reference_number", ""), b.get("date", ""),
+            f"{format_time_12h(b.get('start_time', ''))} - {format_time_12h(b.get('end_time', ''))}",
+            int(b["table_no"]) if b.get("table_no") is not None else "",
+            b.get("name", ""), b.get("phone", ""), b.get("its", ""),
+            b.get("team1_name") or b.get("team_name", ""), players[0], players[1],
+            b.get("team2_name", ""), players[2], players[3],
+            str(b.get("created_at", ""))[:19].replace("T", " "),
+        ])
+    for cell in ws[1]:
+        cell.font = Font(bold=True, color="FFFFFF")
+        cell.fill = PatternFill(start_color="047857", end_color="047857", fill_type="solid")
+        cell.alignment = Alignment(horizontal="center", vertical="center")
+    for i, w in enumerate([12, 12, 18, 7, 20, 18, 11, 20, 20, 20, 20, 20, 20, 20], start=1):
+        ws.column_dimensions[chr(64 + i)].width = w
+    ws.freeze_panes = "A2"
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    return StreamingResponse(
+        buf,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": 'attachment; filename="practice-bookings.xlsx"'},
+    )
+
+
+@app.post("/admin/bookings/price")
+def admin_bookings_set_price(request: Request, price: str = Form(...)):
+    require_admin(request)
+    price = price.strip()
+    if not price.isdigit() or int(price) > 100000:
+        return RedirectResponse("/admin/bookings?dates_error=Price+must+be+a+whole+number+in+AED", status_code=303)
+    set_practice_price(int(price))
+    return RedirectResponse("/admin/bookings", status_code=303)
 
 
 @app.post("/admin/bookings/dates/add")

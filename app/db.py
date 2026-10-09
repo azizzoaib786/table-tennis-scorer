@@ -7,8 +7,6 @@ from boto3.dynamodb.conditions import Key, Attr
 from boto3.dynamodb.types import TypeSerializer
 from typing import Any, Dict, List, Optional, Tuple
 
-from .allowed_its import GENERIC_ITS
-
 # AWS configuration
 AWS_REGION = os.getenv("AWS_REGION", "eu-west-1")
 MATCHES_TABLE = os.getenv("MATCHES_TABLE", "tt_matches")
@@ -555,7 +553,7 @@ def create_practice_half_booking(date: str, start_time: str, end_time: str, name
     whole tables stay free for full-table bookings."""
     meta = _new_booking_meta()
     lock_key = _practice_its_lock_key(date, start_time, end_time, its)
-    use_lock = its != GENERIC_ITS     # the shared fallback ITS can book repeatedly
+    use_lock = True
     try:
         if use_lock:
             practice_bookings_tbl.put_item(
@@ -795,10 +793,31 @@ def get_practice_date_ranges() -> List[Dict[str, str]]:
 
 def set_practice_date_ranges(ranges: List[Dict[str, str]]) -> None:
     unique = {(str(r["start"]), str(r["end"])) for r in ranges}
-    settings_tbl.put_item(Item={
-        "config_id": PRACTICE_CONFIG_ID,
-        "date_ranges": [{"start": s, "end": e} for s, e in sorted(unique)],
-    })
+    # update_item (not put_item) so other fields on this row, e.g. the price, survive.
+    settings_tbl.update_item(
+        Key={"config_id": PRACTICE_CONFIG_ID},
+        UpdateExpression="SET date_ranges = :d",
+        ExpressionAttributeValues={":d": [{"start": s, "end": e} for s, e in sorted(unique)]},
+    )
+
+
+DEFAULT_PRACTICE_PRICE_AED = 40   # full table, per hour
+
+
+def get_practice_price() -> int:
+    item = settings_tbl.get_item(Key={"config_id": PRACTICE_CONFIG_ID}).get("Item") or {}
+    try:
+        return int(item.get("price_aed", DEFAULT_PRACTICE_PRICE_AED))
+    except (TypeError, ValueError):
+        return DEFAULT_PRACTICE_PRICE_AED
+
+
+def set_practice_price(price_aed: int) -> None:
+    settings_tbl.update_item(
+        Key={"config_id": PRACTICE_CONFIG_ID},
+        UpdateExpression="SET price_aed = :p",
+        ExpressionAttributeValues={":p": int(price_aed)},
+    )
 
 
 def is_practice_date_open(date: str, ranges: List[Dict[str, str]]) -> bool:

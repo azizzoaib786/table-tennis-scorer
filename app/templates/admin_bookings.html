@@ -19,6 +19,7 @@
           </div>
           <div class="flex gap-2 flex-wrap">
             <a href="/admin" class="px-3 py-2 rounded-lg bg-slate-200 hover:bg-slate-300 text-slate-800 text-sm font-bold">← Admin</a>
+            <a href="/admin/bookings.xlsx{% if q %}?q={{ q|urlencode }}{% endif %}" class="px-3 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-bold">⬇ Excel</a>
             <a href="/booking" target="_blank" class="px-3 py-2 rounded-lg bg-emerald-100 hover:bg-emerald-200 text-emerald-800 text-sm font-bold">🔗 Public booking link</a>
           </div>
         </div>
@@ -53,6 +54,18 @@
               <input type="date" name="end" class="block mt-1 rounded-xl border-2 border-emerald-200 focus:border-emerald-400 px-3 py-2 text-sm bg-white"/>
             </label>
             <button type="submit" class="rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 text-sm font-bold shadow-md">+ Open dates</button>
+          </form>
+        </div>
+
+        <!-- Full table price -->
+        <div class="bg-amber-50 rounded-2xl border-2 border-amber-200 p-4 mb-4">
+          <h2 class="text-lg font-bold text-amber-900 mb-1">💰 Full table price</h2>
+          <p class="text-xs text-amber-700 mb-3">Shown to the public on the booking pages (per hour).</p>
+          <form method="post" action="/admin/bookings/price" class="flex gap-2 items-end">
+            <label class="text-xs font-bold text-amber-900">AED per hour
+              <input type="number" name="price" min="0" max="100000" step="1" required value="{{ price }}" class="block mt-1 w-32 rounded-xl border-2 border-amber-200 focus:border-amber-400 px-3 py-2 text-sm bg-white"/>
+            </label>
+            <button type="submit" class="rounded-xl bg-amber-600 hover:bg-amber-700 text-white px-4 py-2 text-sm font-bold shadow-md">Save price</button>
           </form>
         </div>
 
