@@ -36,7 +36,7 @@ from .db import (
     get_practice_slot_availability, get_practice_tables_grid, delete_practice_booking_by_id,
     get_practice_date_ranges, set_practice_date_ranges, is_practice_date_open,
     get_practice_price, set_practice_price,
-    PRACTICE_TIME_RANGES, PRACTICE_TABLES, format_time_12h,
+    get_practice_time_ranges, all_practice_time_ranges, PRACTICE_TABLES, format_time_12h,
 )
 from .logic import compute_state, player_name
 from .auth import hash_password, verify_password, create_session_token, verify_session_token
@@ -927,8 +927,8 @@ PRACTICE_PHONE_RE = re.compile(r"^\+\d{12,15}$")
 PRACTICE_ITS_RE = re.compile(r"^\d{8}$")   # e.g. 11112222
 
 
-def _parse_practice_time_range(value: str) -> Optional[tuple]:
-    for s, e in PRACTICE_TIME_RANGES:
+def _parse_practice_time_range(value: str, date: str = "") -> Optional[tuple]:
+    for s, e in get_practice_time_ranges(date):
         if value == f"{s}-{e}":
             return s, e
     return None
@@ -943,7 +943,7 @@ def _validate_practice_common(name: str, phone: str, its: str, date: str, time_r
         return "Please enter a valid number with country code, e.g. +971568103175."
     if not PRACTICE_ITS_RE.match(its):
         return "ITS number must be exactly 8 digits, e.g. 11112222."
-    if _parse_practice_time_range(time_range) is None:
+    if _parse_practice_time_range(time_range, date) is None:
         return "Please choose a valid time slot."
     if not is_practice_date_open(date, date_ranges):
         return "Bookings are not open for that date. Please choose an available date."
@@ -997,7 +997,7 @@ def _render_booking_form(request: Request, mode: str, form: Optional[Dict[str, s
         "request": request,
         "mode": mode,                      # "half" | "full"
         **_practice_date_ctx(),
-        "time_ranges": PRACTICE_TIME_RANGES,
+        "time_ranges": all_practice_time_ranges(),
         "tables": PRACTICE_TABLES,
         "form": form or {},
         "error": error,
@@ -1033,7 +1033,7 @@ def booking_full_submit(request: Request, name: str = Form(...), phone: str = Fo
     if err:
         return _render_booking_form(request, "full", form, err, 400)
 
-    start_time, end_time = _parse_practice_time_range(form["time_range"])
+    start_time, end_time = _parse_practice_time_range(form["time_range"], form["date"])
     players = [form["name"], form["player2"], form["player3"], form["player4"]]
     booking, problem = create_practice_full_booking(
         form["date"], start_time, end_time, form["name"], form["phone"], form["its"], players,

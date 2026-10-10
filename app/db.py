@@ -482,7 +482,24 @@ def find_registration_by_name(tournament_id: str, name: str) -> Optional[Dict[st
 # bookings are exempt from that rule. Lock rows carry kind="lock" and the same
 # booking_id, so cancelling a booking removes its lock too.
 PRACTICE_TABLES = 4
-PRACTICE_TIME_RANGES = [("10:30", "11:30"), ("11:30", "12:30")]
+PRACTICE_TIME_RANGES = [("19:30", "20:30"), ("20:30", "21:30")]
+# Dates with their own slots (replace the default evening slots on that date).
+PRACTICE_DATE_TIME_RANGES = {
+    "2026-10-11": [("10:30", "11:30"), ("11:30", "12:30")],
+}
+
+
+def get_practice_time_ranges(date: str = "") -> List[tuple]:
+    """Slots offered on `date` (default evening slots unless overridden)."""
+    return PRACTICE_DATE_TIME_RANGES.get(date, PRACTICE_TIME_RANGES)
+
+
+def all_practice_time_ranges() -> List[tuple]:
+    """Every slot offered on any date (default slots first, then overrides)."""
+    out = list(PRACTICE_TIME_RANGES)
+    for ranges in PRACTICE_DATE_TIME_RANGES.values():
+        out.extend(r for r in ranges if r not in out)
+    return out
 
 
 def format_time_12h(value: str) -> str:
@@ -732,7 +749,7 @@ def get_practice_slot_availability(date: str) -> Dict[str, Dict[str, int]]:
     A half booking needs an open side; a full booking needs a free table."""
     items = _scan_practice_items(date)
     out: Dict[str, Dict[str, int]] = {}
-    for s, e in PRACTICE_TIME_RANGES:
+    for s, e in get_practice_time_ranges(date):
         state = _practice_range_state(items, date, s, e)
         out[f"{s}-{e}"] = {
             "free_tables": sum(1 for sides in state.values() if not sides),
@@ -746,7 +763,7 @@ def get_practice_tables_grid(date: str) -> List[Dict[str, Any]]:
     (or None when the side is open)."""
     items = _scan_practice_items(date)
     grid = []
-    for s, e in PRACTICE_TIME_RANGES:
+    for s, e in get_practice_time_ranges(date):
         state = _practice_range_state(items, date, s, e)
         grid.append({
             "label": f"{format_time_12h(s)} – {format_time_12h(e)}",

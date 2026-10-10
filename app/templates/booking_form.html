@@ -189,7 +189,10 @@
           const data = await res.json();
           slotLabels.forEach((el) => {
             const info = data[el.getAttribute('data-slot')];
-            if (!info) return;
+            const row = el.closest('label');
+            const radio0 = row.querySelector('input[type=radio]');
+            row.classList.toggle('hidden', !info);
+            if (!info) { radio0.disabled = true; radio0.checked = false; return; }
             const n = mode === 'full' ? info.free_tables : info.open_sides;
             const noun = mode === 'full' ? 'table' : 'side';
             el.textContent = n === 0 ? 'Full' : `${n} ${noun}${n === 1 ? '' : 's'} left`;
