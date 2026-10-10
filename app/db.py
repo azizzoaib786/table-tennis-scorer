@@ -482,7 +482,7 @@ def find_registration_by_name(tournament_id: str, name: str) -> Optional[Dict[st
 # bookings are exempt from that rule. Lock rows carry kind="lock" and the same
 # booking_id, so cancelling a booking removes its lock too.
 PRACTICE_TABLES = 4
-PRACTICE_TIME_RANGES = [("19:30", "20:30"), ("20:30", "21:30")]
+PRACTICE_TIME_RANGES = [("10:30", "11:30"), ("11:30", "12:30")]
 
 
 def format_time_12h(value: str) -> str:
