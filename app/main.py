@@ -2997,11 +2997,11 @@ def create_pool_round_robin(
     # A line may also be just a team name (participants share a team_name).
     by_team: Dict[str, List[Dict[str, Any]]] = {}
     for p in participants:
-        tn = (p.get("team_name") or "").strip().lower()
+        tn = re.sub(r"\s+", " ", (p.get("team_name") or "")).strip().lower()
         if tn:
             by_team.setdefault(tn, []).append(p)
     for raw in teams.splitlines():
-        line = raw.strip()
+        line = re.sub(r"\s+", " ", raw.replace("\u00a0", " ")).strip()
         if not line or line.startswith("#"):
             continue
         members = by_team.get(line.lower())
