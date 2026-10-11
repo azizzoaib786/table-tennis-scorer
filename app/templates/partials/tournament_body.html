@@ -180,10 +180,14 @@
           <option value="singles">Singles</option>
         </select>
         <div class="flex gap-2">
-          <input name="start_table" type="number" min="1" value="1" placeholder="Start table"
-                 class="w-24 rounded-xl border-2 border-fuchsia-200 px-3 py-2 text-sm"/>
-          <input name="num_tables" type="number" min="1" value="{{ tournament.num_tables or 6 }}" placeholder="# tables"
-                 class="w-24 rounded-xl border-2 border-fuchsia-200 px-3 py-2 text-sm"/>
+          <label class="text-[10px] font-bold text-fuchsia-900">First table
+            <input name="start_table" type="number" min="1" value="1" placeholder="Start table" title="First table number used by this pool"
+                   class="block w-24 rounded-xl border-2 border-fuchsia-200 px-3 py-2 text-sm font-normal"/>
+          </label>
+          <label class="text-[10px] font-bold text-fuchsia-900"># of tables
+            <input name="num_tables" type="number" min="1" value="{{ tournament.num_tables or 6 }}" placeholder="# tables" title="How many tables this pool's matches are spread across"
+                   class="block w-24 rounded-xl border-2 border-fuchsia-200 px-3 py-2 text-sm font-normal"/>
+          </label>
         </div>
       </div>
       <textarea name="teams" required rows="7"
