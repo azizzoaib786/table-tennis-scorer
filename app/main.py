@@ -3061,12 +3061,19 @@ def create_pool_round_robin(
             new_matches.append(pair)
             slot += 1
 
-    rounds.append({
+    new_round = {
         "round_num": round_num,
         "name": pool_name.strip() or f"Pool {round_num}",
         "stage_type": "pool",
         "matches": new_matches,
-    })
+    }
+    # New pools inherit the shared pool-stage scoring settings.
+    first_pool = next((r for r in rounds if r.get("stage_type") == "pool"), None)
+    if first_pool:
+        for key in ("best_of", "points_to_win", "shutout_at", "hard_cap_at"):
+            if first_pool.get(key):
+                new_round[key] = first_pool[key]
+    rounds.append(new_round)
     update_tournament(tournament_id, "SET rounds = :r", {":r": rounds})
     t2 = must_tournament(tournament_id)
 
@@ -3474,17 +3481,21 @@ def set_round_config(request: Request, tournament_id: str, round_num: int,
     target = next((r for r in rounds if int(r.get("round_num", 0)) == int(round_num)), None)
     if not target:
         raise HTTPException(404, "Round not found")
-    for key, val in (("best_of", best_of), ("points_to_win", points_to_win),
-                     ("shutout_at", shutout_at), ("hard_cap_at", hard_cap_at)):
-        if val:
-            target[key] = int(val)
-        else:
-            target.pop(key, None)
+    # All pools share one stage-level setting; other stages are per round.
+    targets = [r for r in rounds if r.get("stage_type") == "pool"] if target.get("stage_type") == "pool" else [target]
+    for tr in targets:
+        for key, val in (("best_of", best_of), ("points_to_win", points_to_win),
+                         ("shutout_at", shutout_at), ("hard_cap_at", hard_cap_at)):
+            if val:
+                tr[key] = int(val)
+            else:
+                tr.pop(key, None)
     update_tournament(tournament_id, "SET rounds = :r", {":r": rounds})
     return templates.TemplateResponse("partials/tournament_body.html", {
         "request": request, "user": user, "tournament": must_tournament(tournament_id),
         "roster": list_roster(),
-        "flash": f"✅ {target.get('name', 'Round')} scoring saved",
+        "flash": "✅ Scoring saved for all pools" if len(targets) > 1 or target.get("stage_type") == "pool"
+                 else f"✅ {target.get('name', 'Round')} scoring saved",
     })
 
 
@@ -3522,6 +3533,26 @@ def set_pair_table(request: Request, tournament_id: str, round_num: int, slot: i
         "request": request, "user": user, "tournament": t2,
         "roster": list_roster(),
         "flash": f"🪧 Table {tn or '—'} saved",
+    })
+
+
+@app.post("/tournaments/{tournament_id}/rounds/{round_num}/delete", response_class=HTMLResponse)
+def delete_round(request: Request, tournament_id: str, round_num: int):
+    """Admin: delete a whole round/pool. Refuses if any of its matches has
+    already been started or decided (so no scoring history is lost)."""
+    user, t = check_tournament_access(request, tournament_id, admin_only=True)
+    rounds = t.get("rounds", [])
+    target_round = next((r for r in rounds if int(r.get("round_num", 0)) == int(round_num)), None)
+    if not target_round:
+        raise HTTPException(404, "Round not found")
+    if any(m.get("match_id") or m.get("winner") for m in target_round.get("matches", [])):
+        raise HTTPException(400, "This round has started or finished matches - remove those first")
+    rounds = [r for r in rounds if int(r.get("round_num", 0)) != int(round_num)]
+    update_tournament(tournament_id, "SET rounds = :r", {":r": rounds})
+    return templates.TemplateResponse("partials/tournament_body.html", {
+        "request": request, "user": user, "tournament": must_tournament(tournament_id),
+        "roster": list_roster(),
+        "flash": f"🗑️ Deleted {target_round.get('name', 'round')}",
     })
 
 

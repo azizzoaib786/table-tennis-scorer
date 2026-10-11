@@ -227,13 +227,26 @@
         <a href="/tournaments/{{ tournament.tournament_id }}/results.html?round={{ r.round_num }}" target="_blank" class="text-xs px-2 py-1 rounded-full bg-slate-100 text-slate-700 font-bold hover:bg-slate-200">📄 Results</a>
         <a href="/tournaments/{{ tournament.tournament_id }}/results.xlsx?round={{ r.round_num }}" class="text-xs px-2 py-1 rounded-full bg-emerald-600 text-white font-bold hover:bg-emerald-700">⬇️ Excel</a>
         {% endif %}
+        {% if user and user.is_admin %}
+        <form hx-post="/tournaments/{{ tournament.tournament_id }}/rounds/{{ r.round_num }}/delete"
+              hx-target="#tournament-body" hx-swap="innerHTML"
+              hx-confirm="Delete {{ r.name }} and all its matches?" class="inline">
+          <button class="text-xs px-2 py-1 rounded-full bg-rose-500 hover:bg-rose-600 text-white font-bold">🗑️ Delete</button>
+        </form>
+        {% endif %}
         <span class="text-xs px-2 py-1 rounded-full bg-emerald-100 text-emerald-700 font-bold">Round {{ r.round_num }}</span>
       </div>
     </div>
 
     {% if user and user.is_admin %}
+    {% set pool_rounds = tournament.rounds|selectattr('stage_type', 'equalto', 'pool')|list %}
+    {% set is_shared_pool = (r.stage_type == 'pool') %}
+    {% set is_first_pool = is_shared_pool and pool_rounds and pool_rounds[0].round_num == r.round_num %}
     <details class="mb-3">
-      <summary class="cursor-pointer text-xs font-bold text-teal-800">⚙️ Scoring for this round: Bo{{ r.get('best_of') or tournament.best_of }} • to {{ r.get('points_to_win') or tournament.points_to_win }}{% if r.get('shutout_at') %} • shutout {{ r.get('shutout_at') }}-0{% endif %}{% if r.get('hard_cap_at') %} • cap {{ r.get('hard_cap_at') }}{% endif %}{% if r.get('best_of') or r.get('points_to_win') or r.get('shutout_at') or r.get('hard_cap_at') %} (round override){% endif %}</summary>
+      <summary class="cursor-pointer text-xs font-bold text-teal-800">⚙️ Scoring {% if is_shared_pool %}for ALL pools{% else %}for this round{% endif %}: Bo{{ r.get('best_of') or tournament.best_of }} • to {{ r.get('points_to_win') or tournament.points_to_win }}{% if r.get('shutout_at') %} • shutout {{ r.get('shutout_at') }}-0{% endif %}{% if r.get('hard_cap_at') %} • cap {{ r.get('hard_cap_at') }}{% endif %}{% if r.get('best_of') or r.get('points_to_win') or r.get('shutout_at') or r.get('hard_cap_at') %} (override){% endif %}</summary>
+      {% if is_shared_pool and not is_first_pool %}
+      <p class="mt-2 text-xs text-teal-700">Pool scoring is shared by all pools. Change it in <strong>{{ pool_rounds[0].name }}</strong> (first pool).</p>
+      {% else %}
       <form hx-post="/tournaments/{{ tournament.tournament_id }}/rounds/{{ r.round_num }}/config"
             hx-target="#tournament-body" hx-swap="innerHTML" class="mt-2 flex items-end gap-2 flex-wrap">
         <div>
@@ -258,6 +271,7 @@
         <button class="rounded-lg bg-teal-600 hover:bg-teal-700 text-white font-bold px-3 py-1.5 text-sm">Save</button>
         <span class="text-[10px] text-teal-700">0 = use tournament value. Shutout: a team reaching this score while the other has 0 wins the game (0 = off). Hard cap: first to this score wins (0 = global setting). Applies to matches started after saving.</span>
       </form>
+      {% endif %}
     </details>
     {% endif %}
 
