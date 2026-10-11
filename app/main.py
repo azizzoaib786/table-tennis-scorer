@@ -191,7 +191,7 @@ def _advancing_participants(tournament: dict, round_num: int) -> list:
         # Group stage -> knockout: once every group is fully played, only the
         # qualifiers (top N per group by wins, then NRR) are selectable.
         qualified = _qualified_participant_ids(tournament, int(round_num))
-        if qualified:
+        if qualified is not None:
             return [p for p in participants if p.get("id") in qualified]
         return participants
     if prev.get("stage_type") in ("plate", "custom"):
@@ -333,8 +333,9 @@ templates.env.globals["pool_standings"] = _all_pool_standings
 
 
 def _qualified_participant_ids(t: Dict[str, Any], before_round: int) -> Optional[set]:
-    """Participant ids of all group qualifiers, or None unless every pool round
-    before `before_round` is completely played."""
+    """Participant ids of the qualifiers (top N per pool) from every pool that
+    is completely played before `before_round`. Pools still in progress add
+    nobody. None only when there are no pools at all."""
     pools = [r for r in (t.get("rounds") or [])
              if r.get("stage_type") == "pool" and r.get("matches")
              and int(r.get("round_num", 0)) < before_round]
@@ -344,11 +345,11 @@ def _qualified_participant_ids(t: Dict[str, Any], before_round: int) -> Optional
     for r in pools:
         st = _pool_standings(t, r)
         if not st["complete"]:
-            return None
+            continue
         for row in st["rows"]:
             if row["qualified"]:
                 ids.update(x for x in row["members"] if x)
-    return ids or None
+    return ids
 
 
 def _build_table_board(t: Dict[str, Any], rounds_view: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
