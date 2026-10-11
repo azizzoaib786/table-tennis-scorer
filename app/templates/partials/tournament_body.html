@@ -187,7 +187,7 @@
         </div>
       </div>
       <textarea name="teams" required rows="7"
-        placeholder="One team per line. Doubles: 'Alice + Bob'. Singles: just the name.&#10;Example (6 teams for the Milad format):&#10;Alice + Bob&#10;Charlie + Dave&#10;Ethan + Frank&#10;Gary + Henry&#10;Ian + Jack&#10;Kevin + Leo&#10;# lines starting with # are ignored"
+        placeholder="One team per line: a team name (e.g. Ali Titans) or 'Alice + Bob'. Singles: just the name.&#10;Example (4 teams per pool):&#10;Ali Titans&#10;Joofa&#10;Legends&#10;Pongfinity&#10;# lines starting with # are ignored"
         class="w-full rounded-xl border-2 border-fuchsia-200 focus:border-fuchsia-400 px-3 py-2 text-sm font-mono"></textarea>
       <p class="text-[11px] text-fuchsia-800">
         Every team plays every other team once (N×(N−1)/2 matches). Table numbers are assigned round-robin across your table set. All names must already be participants.
@@ -229,7 +229,7 @@
 
     {% if user and user.is_admin %}
     <details class="mb-3">
-      <summary class="cursor-pointer text-xs font-bold text-teal-800">⚙️ Scoring for this round: Bo{{ r.get('best_of') or tournament.best_of }} • to {{ r.get('points_to_win') or tournament.points_to_win }}{% if r.get('best_of') or r.get('points_to_win') %} (round override){% endif %}</summary>
+      <summary class="cursor-pointer text-xs font-bold text-teal-800">⚙️ Scoring for this round: Bo{{ r.get('best_of') or tournament.best_of }} • to {{ r.get('points_to_win') or tournament.points_to_win }}{% if r.get('shutout_at') %} • shutout {{ r.get('shutout_at') }}-0{% endif %}{% if r.get('hard_cap_at') %} • cap {{ r.get('hard_cap_at') }}{% endif %}{% if r.get('best_of') or r.get('points_to_win') or r.get('shutout_at') or r.get('hard_cap_at') %} (round override){% endif %}</summary>
       <form hx-post="/tournaments/{{ tournament.tournament_id }}/rounds/{{ r.round_num }}/config"
             hx-target="#tournament-body" hx-swap="innerHTML" class="mt-2 flex items-end gap-2 flex-wrap">
         <div>
@@ -243,8 +243,16 @@
           <label class="text-[10px] font-bold text-teal-900 block">Points to win</label>
           <input type="number" name="points_to_win" min="0" value="{{ r.get('points_to_win') or 0 }}" class="w-24 rounded-lg border-2 border-teal-200 px-2 py-1 text-sm"/>
         </div>
+        <div>
+          <label class="text-[10px] font-bold text-teal-900 block">Shutout (7-0) at</label>
+          <input type="number" name="shutout_at" min="0" value="{{ r.get('shutout_at') or 0 }}" class="w-24 rounded-lg border-2 border-teal-200 px-2 py-1 text-sm"/>
+        </div>
+        <div>
+          <label class="text-[10px] font-bold text-teal-900 block">Hard cap at</label>
+          <input type="number" name="hard_cap_at" min="0" value="{{ r.get('hard_cap_at') or 0 }}" class="w-24 rounded-lg border-2 border-teal-200 px-2 py-1 text-sm"/>
+        </div>
         <button class="rounded-lg bg-teal-600 hover:bg-teal-700 text-white font-bold px-3 py-1.5 text-sm">Save</button>
-        <span class="text-[10px] text-teal-700">0 = use tournament value. Applies to matches started after saving.</span>
+        <span class="text-[10px] text-teal-700">0 = use tournament value. Shutout: a team reaching this score while the other has 0 wins the game (0 = off). Hard cap: first to this score wins (0 = global setting). Applies to matches started after saving.</span>
       </form>
     </details>
     {% endif %}
@@ -409,10 +417,12 @@
             <a href="/matches/{{ m.match_id }}" class="px-3 py-2 rounded-lg bg-blue-600 text-white text-xs font-bold shadow-md">Open</a>
             <a href="/live/{{ m.match_id }}" target="_blank" class="px-3 py-2 rounded-lg bg-emerald-600 text-white text-xs font-bold shadow-md">📺 Live</a>
             {% else %}
+            {% if not m.walkover %}
             <form method="post" action="/tournaments/{{ tournament.tournament_id }}/rounds/{{ r.round_num }}/start/{{ m.slot }}"
                   {% if busy_msg %}onsubmit='return confirm({{ ("⚠️ Table " ~ m.table_number ~ " already has a match in progress:\n\n" ~ busy_msg ~ "\n\nThe scorer there may still be scoring. Start this match anyway?")|tojson }})'{% endif %}>
               <button class="px-3 py-2 rounded-lg bg-gradient-to-r from-emerald-600 to-teal-600 text-white text-xs font-bold shadow-md">▶️ Start</button>
             </form>
+            {% endif %}
             {% if user and user.is_admin %}
             <button type="button" onclick="this.closest('.rounded-xl').querySelector('.pair-edit-panel').classList.toggle('hidden')"
                     class="px-3 py-2 rounded-lg bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold shadow-md">✏️ Edit</button>
@@ -459,6 +469,41 @@
           </div>
           <button class="w-full rounded-lg bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold px-3 py-2">💾 Save pairing</button>
         </form>
+        {% if m.walkover %}
+        <div class="mt-2 flex items-center justify-between gap-2 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-800">
+          <span>🚫 No-show recorded: <strong>{{ m.a_points }}–{{ m.b_points }}</strong> (counts for NRR)</span>
+          <form hx-post="/tournaments/{{ tournament.tournament_id }}/rounds/{{ r.round_num }}/pairs/{{ m.slot }}/walkover/clear"
+                hx-target="#tournament-body" hx-swap="innerHTML" hx-confirm="Clear the no-show result?" class="inline">
+            <button class="px-2 py-1 rounded bg-rose-600 hover:bg-rose-700 text-white font-bold">↩️ Clear</button>
+          </form>
+        </div>
+        {% else %}
+        <details class="mt-2">
+          <summary class="cursor-pointer text-xs font-bold text-rose-700">🚫 No-show / walkover</summary>
+          <form hx-post="/tournaments/{{ tournament.tournament_id }}/rounds/{{ r.round_num }}/pairs/{{ m.slot }}/walkover"
+                hx-target="#tournament-body" hx-swap="innerHTML"
+                hx-confirm="Record this match as a no-show result?"
+                class="mt-1 p-3 bg-rose-50 rounded-lg border border-rose-200 flex items-end gap-2 flex-wrap">
+            <div>
+              <label class="text-[10px] font-bold text-rose-900 block">Winner (present team)</label>
+              <select name="winner" required class="rounded-lg border-2 border-rose-200 px-2 py-1 text-sm">
+                <option value="A">{{ m.a_name }}{% if is_doubles %} / {{ m.a2_name }}{% endif %}</option>
+                <option value="B">{{ m.b_name }}{% if is_doubles %} / {{ m.b2_name }}{% endif %}</option>
+              </select>
+            </div>
+            <div>
+              <label class="text-[10px] font-bold text-rose-900 block">Team A pts</label>
+              <input type="number" name="a_points" min="0" placeholder="auto" class="w-20 rounded-lg border-2 border-rose-200 px-2 py-1 text-sm"/>
+            </div>
+            <div>
+              <label class="text-[10px] font-bold text-rose-900 block">Team B pts</label>
+              <input type="number" name="b_points" min="0" placeholder="auto" class="w-20 rounded-lg border-2 border-rose-200 px-2 py-1 text-sm"/>
+            </div>
+            <button class="rounded-lg bg-rose-600 hover:bg-rose-700 text-white font-bold px-3 py-1.5 text-sm">Save</button>
+            <span class="text-[10px] text-rose-800">Blank = round's shutout score (else points-to-win) vs 0. Feeds NRR.</span>
+          </form>
+        </details>
+        {% endif %}
         {% endif %}
       </div>
       {% endfor %}

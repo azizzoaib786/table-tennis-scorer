@@ -55,6 +55,7 @@ def compute_state(match: dict, all_events: List[dict]) -> dict:
     deciding_side_change_at = int(match.get("deciding_side_change_at", 5))
     hard_cap_enabled = bool(match.get("hard_cap_enabled", False))
     hard_cap_at = int(match.get("hard_cap_at", 15))
+    shutout_at = int(match.get("shutout_at", 0) or 0)  # 0 = off
     target_games = best_of // 2 + 1
     match_type = match.get("match_type", "singles")
     is_doubles = match_type == "doubles"
@@ -174,6 +175,11 @@ def compute_state(match: dict, all_events: List[dict]) -> dict:
         elif hard_cap_enabled and a_score >= hard_cap_at:
             game_winner = "A"
         elif hard_cap_enabled and b_score >= hard_cap_at:
+            game_winner = "B"
+        # Shutout rule: reaching `shutout_at` while the opponent is still on 0 wins the game.
+        elif shutout_at > 0 and a_score >= shutout_at and b_score == 0:
+            game_winner = "A"
+        elif shutout_at > 0 and b_score >= shutout_at and a_score == 0:
             game_winner = "B"
 
         if game_winner:

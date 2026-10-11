@@ -2994,9 +2994,19 @@ def create_pool_round_robin(
 
     team_rows: List[List[Dict[str, Any]]] = []  # each row = list of participant dicts
     problems: List[str] = []
+    # A line may also be just a team name (participants share a team_name).
+    by_team: Dict[str, List[Dict[str, Any]]] = {}
+    for p in participants:
+        tn = (p.get("team_name") or "").strip().lower()
+        if tn:
+            by_team.setdefault(tn, []).append(p)
     for raw in teams.splitlines():
         line = raw.strip()
         if not line or line.startswith("#"):
+            continue
+        members = by_team.get(line.lower())
+        if tourney_fmt == "doubles" and members and len(members) == 2:
+            team_rows.append(members)
             continue
         names = _side_names(line)
         expected = 2 if tourney_fmt == "doubles" else 1
@@ -3398,19 +3408,26 @@ def edit_pair(request: Request, tournament_id: str, round_num: int, slot: int,
 
 @app.post("/tournaments/{tournament_id}/rounds/{round_num}/config", response_class=HTMLResponse)
 def set_round_config(request: Request, tournament_id: str, round_num: int,
-                     best_of: int = Form(0), points_to_win: int = Form(0)):
-    """Per-round override of best-of / points-to-win (0 = use the tournament value).
+                     best_of: int = Form(0), points_to_win: int = Form(0),
+                     shutout_at: int = Form(0), hard_cap_at: int = Form(0)):
+    """Per-round override of best-of / points-to-win / shutout / hard cap
+    (0 = use the tournament / global value; shutout 0 = off).
     Applies to matches started afterwards."""
     user, t = check_tournament_access(request, tournament_id)
     if best_of not in (0, 1, 3, 5, 7):
         raise HTTPException(400, "best_of must be 1, 3, 5 or 7")
     if points_to_win != 0 and points_to_win < 5:
         raise HTTPException(400, "points_to_win must be at least 5")
+    if shutout_at < 0 or (shutout_at and shutout_at < 3):
+        raise HTTPException(400, "shutout score must be 0 (off) or at least 3")
+    if hard_cap_at < 0 or (hard_cap_at and hard_cap_at < 5):
+        raise HTTPException(400, "hard cap must be 0 (use global) or at least 5")
     rounds = t.get("rounds", [])
     target = next((r for r in rounds if int(r.get("round_num", 0)) == int(round_num)), None)
     if not target:
         raise HTTPException(404, "Round not found")
-    for key, val in (("best_of", best_of), ("points_to_win", points_to_win)):
+    for key, val in (("best_of", best_of), ("points_to_win", points_to_win),
+                     ("shutout_at", shutout_at), ("hard_cap_at", hard_cap_at)):
         if val:
             target[key] = int(val)
         else:
@@ -3521,8 +3538,9 @@ def start_pair_match(request: Request, tournament_id: str, round_num: int, slot:
         "deciding_side_change_at": int(cfg.get("deciding_side_change_at", 5)),
         # Snapshot hard-cap rule onto the tournament match too — mirrors
         # /matches so global settings changes don't retro-alter live matches.
-        "hard_cap_enabled": bool(cfg.get("hard_cap_enabled", False)),
-        "hard_cap_at": int(cfg.get("hard_cap_at", 15)),
+        "hard_cap_enabled": bool(target_round.get("hard_cap_at")) or bool(cfg.get("hard_cap_enabled", False)),
+        "hard_cap_at": int(target_round.get("hard_cap_at") or cfg.get("hard_cap_at", 15)),
+        "shutout_at": int(target_round.get("shutout_at") or 0),
         "first_server": "A",
         "created_at": now_ts(),
         "user_id": user["user_id"],
@@ -3541,6 +3559,66 @@ def start_pair_match(request: Request, tournament_id: str, round_num: int, slot:
     pair["match_id"] = match_id
     update_tournament(tournament_id, "SET rounds = :r", {":r": t["rounds"]})
     return RedirectResponse(f"/matches/{match_id}", status_code=303)
+
+
+@app.post("/tournaments/{tournament_id}/rounds/{round_num}/pairs/{slot}/walkover", response_class=HTMLResponse)
+def set_pair_walkover(request: Request, tournament_id: str, round_num: int, slot: int,
+                      winner: str = Form(...), a_points: str = Form(""), b_points: str = Form("")):
+    """Admin: record a no-show / walkover without playing the match. The
+    winner side gets the entered points (default: the round's shutout score,
+    else points-to-win, vs 0) and these feed pool NRR like a played match."""
+    user, t = check_tournament_access(request, tournament_id)
+    if winner not in ("A", "B"):
+        raise HTTPException(400, "winner must be A or B")
+    target_round = next((r for r in t.get("rounds", []) if int(r.get("round_num", 0)) == int(round_num)), None)
+    if not target_round:
+        raise HTTPException(404, "Round not found")
+    pair = next((m for m in target_round.get("matches", []) if int(m.get("slot", 0)) == int(slot)), None)
+    if not pair:
+        raise HTTPException(404, "Pair not found")
+    if pair.get("match_id"):
+        raise HTTPException(400, "Match already started - delete the match first")
+    try:
+        a_points = int(a_points) if str(a_points).strip() != "" else -1
+        b_points = int(b_points) if str(b_points).strip() != "" else -1
+    except ValueError:
+        raise HTTPException(400, "Points must be whole numbers")
+    default_pts = int(target_round.get("shutout_at") or target_round.get("points_to_win")
+                      or t.get("points_to_win") or 11)
+    win_pts = default_pts if (a_points if winner == "A" else b_points) < 0 else (a_points if winner == "A" else b_points)
+    lose_pts = 0 if (b_points if winner == "A" else a_points) < 0 else (b_points if winner == "A" else a_points)
+    if win_pts <= lose_pts:
+        raise HTTPException(400, "Winner must have more points than the other team")
+    pair["winner"] = winner
+    pair["winner_name"] = _slot_winner_label(t, {**pair, "winner": winner})
+    pair["a_points"] = win_pts if winner == "A" else lose_pts
+    pair["b_points"] = win_pts if winner == "B" else lose_pts
+    pair["walkover"] = True
+    update_tournament(tournament_id, "SET rounds = :r", {":r": t["rounds"]})
+    return templates.TemplateResponse("partials/tournament_body.html", {
+        "request": request, "user": user, "tournament": must_tournament(tournament_id),
+        "roster": list_roster(),
+        "flash": f"✅ No-show recorded: {pair['winner_name']} win {pair['a_points']}-{pair['b_points']}",
+    })
+
+
+@app.post("/tournaments/{tournament_id}/rounds/{round_num}/pairs/{slot}/walkover/clear", response_class=HTMLResponse)
+def clear_pair_walkover(request: Request, tournament_id: str, round_num: int, slot: int):
+    user, t = check_tournament_access(request, tournament_id)
+    target_round = next((r for r in t.get("rounds", []) if int(r.get("round_num", 0)) == int(round_num)), None)
+    pair = next((m for m in (target_round or {}).get("matches", []) if int(m.get("slot", 0)) == int(slot)), None)
+    if not pair or not pair.get("walkover"):
+        raise HTTPException(404, "No walkover to clear")
+    for k in ("walkover", "a_points", "b_points"):
+        pair.pop(k, None)
+    pair["winner"] = ""
+    pair["winner_name"] = ""
+    update_tournament(tournament_id, "SET rounds = :r", {":r": t["rounds"]})
+    return templates.TemplateResponse("partials/tournament_body.html", {
+        "request": request, "user": user, "tournament": must_tournament(tournament_id),
+        "roster": list_roster(),
+        "flash": "↩️ No-show result cleared",
+    })
 
 
 # ── Public tournament dashboard ───────────────────────────────────────────────
@@ -3594,6 +3672,11 @@ def _build_rounds_view(t: Dict[str, Any]) -> List[Dict[str, Any]]:
                         games = st.get("games") or []
                         row["final_a"] = sum(int(g["a"]) for g in games)
                         row["final_b"] = sum(int(g["b"]) for g in games)
+            elif pair.get("walkover") and pair.get("winner") in ("A", "B"):
+                row["status"] = "finished"
+                row["walkover"] = True
+                row["final_a"] = int(pair.get("a_points") or 0)
+                row["final_b"] = int(pair.get("b_points") or 0)
             matches_view.append(row)
         rounds_view.append({
             "round_num": int(r.get("round_num", 0)),
