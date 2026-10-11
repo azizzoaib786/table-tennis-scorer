@@ -261,6 +261,31 @@
     </details>
     {% endif %}
 
+    {% if user and user.is_admin and r.matches and tournament.format == 'doubles' %}
+    <details class="mb-3">
+      <summary class="cursor-pointer text-xs font-bold text-fuchsia-800">🔁 Replace a team in this round</summary>
+      <form hx-post="/tournaments/{{ tournament.tournament_id }}/rounds/{{ r.round_num }}/replace-team"
+            hx-target="#tournament-body" hx-swap="innerHTML"
+            hx-confirm="Swap this team in all unstarted matches of this round?"
+            class="mt-2 flex items-end gap-2 flex-wrap">
+        <div>
+          <label class="text-[10px] font-bold text-fuchsia-900 block">Remove team</label>
+          <select name="from_team" required class="rounded-lg border-2 border-fuchsia-200 px-2 py-1 text-sm">
+            {% for p in tournament.participants if p.team_name and p.is_primary %}<option>{{ p.team_name }}</option>{% endfor %}
+          </select>
+        </div>
+        <div>
+          <label class="text-[10px] font-bold text-fuchsia-900 block">Put this team instead</label>
+          <select name="to_team" required class="rounded-lg border-2 border-fuchsia-200 px-2 py-1 text-sm">
+            {% for p in tournament.participants if p.team_name and p.is_primary %}<option>{{ p.team_name }}</option>{% endfor %}
+          </select>
+        </div>
+        <button class="rounded-lg bg-fuchsia-600 hover:bg-fuchsia-700 text-white font-bold px-3 py-1.5 text-sm">Replace</button>
+        <span class="text-[10px] text-fuchsia-700">Only matches not yet started or decided are changed. Use Edit on a match to change a single pairing.</span>
+      </form>
+    </details>
+    {% endif %}
+
     {% if r.round_num > 1 and r.stage_type != 'pool' and r.stage_type != 'plate' and r.stage_type != 'custom' and (pool|length) < (tournament.participants|length) %}
     <div class="mb-3 rounded-lg border-2 border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
       🏆 Showing only <strong>{{ pool|length }}</strong> advancing player{{ 's' if (pool|length) != 1 else '' }} from Round {{ r.round_num - 1 }}.

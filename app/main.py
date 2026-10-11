@@ -3357,6 +3357,54 @@ def bulk_add_pairs(request: Request, tournament_id: str, round_num: int,
     })
 
 
+@app.post("/tournaments/{tournament_id}/rounds/{round_num}/replace-team", response_class=HTMLResponse)
+def replace_team_in_round(request: Request, tournament_id: str, round_num: int,
+                          from_team: str = Form(...), to_team: str = Form(...)):
+    """Swap one team for another across every not-yet-started match in a round
+    (fix a wrong draw without deleting the pool)."""
+    user, t = check_tournament_access(request, tournament_id)
+    rounds = t.get("rounds", [])
+    target_round = next((r for r in rounds if int(r.get("round_num", 0)) == int(round_num)), None)
+    if not target_round:
+        raise HTTPException(404, "Round not found")
+
+    def _members(name: str) -> List[Dict[str, Any]]:
+        key = re.sub(r"\s+", " ", name).strip().lower()
+        return [p for p in t.get("participants", [])
+                if re.sub(r"\s+", " ", p.get("team_name") or "").strip().lower() == key]
+
+    old, new = _members(from_team), _members(to_team)
+    if len(old) != 2 or len(new) != 2:
+        raise HTTPException(400, "Both teams must be doubles teams with 2 players")
+    old_ids = {p["id"] for p in old}
+    new_ids = {p["id"] for p in new}
+    if old_ids == new_ids:
+        raise HTTPException(400, "Pick two different teams")
+    slots = target_round.get("matches", [])
+    in_round = set()
+    for m in slots:
+        in_round.update(m.get(k) for k in ("a_id", "a2_id", "b_id", "b2_id"))
+    if new_ids & in_round:
+        raise HTTPException(400, "The replacement team is already in this round")
+    n_changed = 0
+    for m in slots:
+        if m.get("match_id") or m.get("winner"):
+            continue
+        for side in ("a", "b"):
+            if m.get(f"{side}_id") in old_ids:
+                m[f"{side}_id"], m[f"{side}_name"] = new[0]["id"], new[0]["name"]
+                m[f"{side}2_id"], m[f"{side}2_name"] = new[1]["id"], new[1]["name"]
+                n_changed += 1
+    if not n_changed:
+        raise HTTPException(400, "That team has no unstarted matches in this round")
+    update_tournament(tournament_id, "SET rounds = :r", {":r": rounds})
+    return templates.TemplateResponse("partials/tournament_body.html", {
+        "request": request, "user": user, "tournament": must_tournament(tournament_id),
+        "roster": list_roster(),
+        "flash": f"✅ Replaced team in {n_changed} match(es)",
+    })
+
+
 @app.post("/tournaments/{tournament_id}/rounds/{round_num}/pairs/{slot}/edit", response_class=HTMLResponse)
 def edit_pair(request: Request, tournament_id: str, round_num: int, slot: int,
               match_type: str = Form("singles"),
