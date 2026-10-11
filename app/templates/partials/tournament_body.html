@@ -230,7 +230,7 @@
         {% if user and user.is_admin %}
         <form hx-post="/tournaments/{{ tournament.tournament_id }}/rounds/{{ r.round_num }}/delete"
               hx-target="#tournament-body" hx-swap="innerHTML"
-              hx-confirm="Delete {{ r.name }} and all its matches?" class="inline">
+              hx-confirm="Delete {{ r.name }} and ALL its matches{% if r.matches|selectattr('match_id')|list %}, including started/played ones (their scores will be lost){% endif %}? This cannot be undone." class="inline">
           <button class="text-xs px-2 py-1 rounded-full bg-rose-500 hover:bg-rose-600 text-white font-bold">🗑️ Delete</button>
         </form>
         {% endif %}

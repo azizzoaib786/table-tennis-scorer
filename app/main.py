@@ -3539,21 +3539,24 @@ def set_pair_table(request: Request, tournament_id: str, round_num: int, slot: i
 
 @app.post("/tournaments/{tournament_id}/rounds/{round_num}/delete", response_class=HTMLResponse)
 def delete_round(request: Request, tournament_id: str, round_num: int):
-    """Admin: delete a whole round/pool. Refuses if any of its matches has
-    already been started or decided (so no scoring history is lost)."""
+    """Admin: delete a whole round/pool, including the live/finished match
+    records of any started matches."""
     user, t = check_tournament_access(request, tournament_id, admin_only=True)
     rounds = t.get("rounds", [])
     target_round = next((r for r in rounds if int(r.get("round_num", 0)) == int(round_num)), None)
     if not target_round:
         raise HTTPException(404, "Round not found")
-    if any(m.get("match_id") or m.get("winner") for m in target_round.get("matches", [])):
-        raise HTTPException(400, "This round has started or finished matches - remove those first")
+    n_matches = 0
+    for m in target_round.get("matches", []):
+        if m.get("match_id"):
+            delete_match(m["match_id"])
+            n_matches += 1
     rounds = [r for r in rounds if int(r.get("round_num", 0)) != int(round_num)]
     update_tournament(tournament_id, "SET rounds = :r", {":r": rounds})
     return templates.TemplateResponse("partials/tournament_body.html", {
         "request": request, "user": user, "tournament": must_tournament(tournament_id),
         "roster": list_roster(),
-        "flash": f"🗑️ Deleted {target_round.get('name', 'round')}",
+        "flash": f"🗑️ Deleted {target_round.get('name', 'round')}" + (f" and {n_matches} match record(s)" if n_matches else ""),
     })
 
 
