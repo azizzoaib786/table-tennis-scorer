@@ -16,7 +16,28 @@ Events (from ``list_events``):
   - ``type`` == "let": a let (net on serve) - no score/serve change.
   - ``undone`` bool: soft-deleted events are ignored.
 """
+from datetime import datetime, timezone
 from typing import Dict, List, Optional, Tuple
+
+
+def parse_event_ts(ts) -> Optional[datetime]:
+    """Parse an event ts like '2026-10-14T10:00:00.123456Z#<uuid>' to an aware UTC datetime."""
+    if not ts:
+        return None
+    try:
+        return datetime.strptime(str(ts).split("#")[0], "%Y-%m-%dT%H:%M:%S.%fZ").replace(tzinfo=timezone.utc)
+    except ValueError:
+        return None
+
+
+def format_duration(sec) -> str:
+    """Seconds -> 'H:MM:SS' or 'M:SS' ('' when unknown)."""
+    if sec is None:
+        return ""
+    sec = max(0, int(sec))
+    h, rem = divmod(sec, 3600)
+    m, s = divmod(rem, 60)
+    return f"{h}:{m:02d}:{s:02d}" if h else f"{m}:{s:02d}"
 
 
 def _live_events(all_events: List[dict]) -> List[dict]:
@@ -242,7 +263,25 @@ def compute_state(match: dict, all_events: List[dict]) -> dict:
         else None
     )
 
+    started_dt = parse_event_ts(ev[0].get("ts")) if ev else None
+    ended_dt = None
+    duration_sec = None
+    elapsed_sec = None
+    if started_dt:
+        if match_winner:
+            ended_dt = parse_event_ts(ev[-1].get("ts"))
+            if ended_dt:
+                duration_sec = int((ended_dt - started_dt).total_seconds())
+        else:
+            elapsed_sec = int((datetime.now(timezone.utc) - started_dt).total_seconds())
+
     return {
+        "started_at": started_dt.isoformat() if started_dt else None,
+        "ended_at": ended_dt.isoformat() if ended_dt else None,
+        "duration_sec": duration_sec,
+        "duration_label": format_duration(duration_sec),
+        "elapsed_sec": elapsed_sec,
+        "elapsed_label": format_duration(elapsed_sec),
         "match_type": match_type,
         "is_doubles": is_doubles,
         "games": games,

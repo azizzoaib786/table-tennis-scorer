@@ -444,7 +444,7 @@
                 {% endif %}
               </div>
             </div>
-            {% if m.winner %}<div class="text-xs text-amber-700 font-bold mt-0.5">🏆 Winner: {{ winner_slot_label(tournament, m) or m.winner_name }}</div>{% endif %}
+            {% if m.winner %}<div class="text-xs text-amber-700 font-bold mt-0.5">🏆 Winner: {{ winner_slot_label(tournament, m) or m.winner_name }}{% set dur = slot_duration(m) %}{% if dur %} <span class="ml-2 text-slate-600">⏱ {{ dur }}</span>{% endif %}</div>{% endif %}
             {% if user and user.is_admin %}
             <form hx-post="/tournaments/{{ tournament.tournament_id }}/rounds/{{ r.round_num }}/pairs/{{ m.slot }}/table"
                   hx-target="#tournament-body" hx-swap="innerHTML"

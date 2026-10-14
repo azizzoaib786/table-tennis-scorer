@@ -38,7 +38,7 @@ from .db import (
     get_practice_price, set_practice_price,
     get_practice_time_ranges, all_practice_time_ranges, PRACTICE_TABLES, format_time_12h,
 )
-from .logic import compute_state, player_name
+from .logic import compute_state, player_name, format_duration
 from .auth import hash_password, verify_password, create_session_token, verify_session_token
 
 app = FastAPI(title="Table Tennis Scorer")
@@ -140,6 +140,7 @@ def _presigned_photo_url(key: str) -> Optional[str]:
 
 
 templates.env.filters["t12"] = format_time_12h
+templates.env.filters["duration"] = format_duration
 templates.env.globals["photo_url"] = _presigned_photo_url
 
 
@@ -280,6 +281,23 @@ def _participant_level(t: Optional[Dict[str, Any]], pid: Optional[str]) -> str:
 
 
 templates.env.globals["participant_level"] = _participant_level
+
+
+def _slot_duration_label(slot: Dict[str, Any]) -> str:
+    """How long a finished tournament match took ('' if unknown / walkover).
+    Uses the value cached at finalization, else derives it from the events."""
+    if slot.get("walkover") or slot.get("winner") not in ("A", "B"):
+        return ""
+    if slot.get("duration_sec") is not None:
+        return format_duration(slot["duration_sec"])
+    mid = slot.get("match_id")
+    m = get_match(mid) if mid else None
+    if not m:
+        return ""
+    return compute_state(m, list_events(mid)).get("duration_label", "")
+
+
+templates.env.globals["slot_duration"] = _slot_duration_label
 
 
 def _pool_standings(t: Dict[str, Any], rnd: Dict[str, Any]) -> Dict[str, Any]:
@@ -1670,6 +1688,9 @@ def _finalize_stats_if_needed(match: dict, state: dict) -> None:
                             games = state.get("games") or []
                             slot["a_points"] = sum(int(g["a"]) for g in games)
                             slot["b_points"] = sum(int(g["b"]) for g in games)
+                            slot["started_at"] = state.get("started_at")
+                            slot["ended_at"] = state.get("ended_at")
+                            slot["duration_sec"] = state.get("duration_sec")
                             break
             update_tournament(tid, "SET rounds = :r", {":r": rounds})
 
@@ -3769,6 +3790,9 @@ def _build_rounds_view(t: Dict[str, Any]) -> List[Dict[str, Any]]:
                         games = st.get("games") or []
                         row["final_a"] = sum(int(g["a"]) for g in games)
                         row["final_b"] = sum(int(g["b"]) for g in games)
+                        row["duration_label"] = st.get("duration_label", "")
+                    else:
+                        row["elapsed_label"] = st.get("elapsed_label", "")
             elif pair.get("walkover") and pair.get("winner") in ("A", "B"):
                 row["status"] = "finished"
                 row["walkover"] = True

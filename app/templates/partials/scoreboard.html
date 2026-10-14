@@ -41,6 +41,23 @@
       </div>
     </div>
 
+    {% if state.match_winner and state.duration_label %}
+    <div class="mb-3 text-center text-xs font-bold text-slate-600">⏱ Match time: <span class="text-emerald-800">{{ state.duration_label }}</span></div>
+    {% elif state.started_at and state.elapsed_label %}
+    <div class="mb-3 text-center text-xs font-bold text-slate-600">⏱ Elapsed: <span class="text-emerald-800 tt-elapsed" data-start="{{ state.started_at }}">{{ state.elapsed_label }}</span></div>
+    <script>
+      if (!window.__ttElapsed) {
+        window.__ttElapsed = setInterval(function () {
+          document.querySelectorAll('.tt-elapsed').forEach(function (el) {
+            var s = Math.max(0, Math.floor((Date.now() - new Date(el.dataset.start).getTime()) / 1000));
+            var h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), x = s % 60;
+            el.textContent = (h ? h + ':' + String(m).padStart(2, '0') : m) + ':' + String(x).padStart(2, '0');
+          });
+        }, 1000);
+      }
+    </script>
+    {% endif %}
+
     <div class="grid grid-cols-2 gap-3">
       {# Team A #}
       <div class="rounded-2xl border-2 {% if state.match_winner == 'A' %}border-amber-400 bg-amber-50{% elif state.server == 'A' %}border-emerald-400 bg-emerald-50{% else %}border-slate-200 bg-white{% endif %} p-3 text-center shadow-sm">
