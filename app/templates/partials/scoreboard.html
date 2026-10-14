@@ -68,11 +68,10 @@
         </div>
         {% endif %}
         <div class="flex items-center justify-center gap-1 mb-1">
-          {% if state.server == 'A' and not state.match_winner and not (state.is_doubles and state.server_side == 2) %}<span class="text-xl">🏓</span>{% endif %}
-          <div class="font-bold text-emerald-900 truncate">{{ match.player_a }}</div>
+          <div class="font-bold text-emerald-900 truncate px-2 rounded {% if state.server == 'A' and not state.match_winner and not (state.is_doubles and state.server_side == 2) %}bg-sky-300{% endif %}">{{ match.player_a }}</div>
         </div>
         {% if state.is_doubles %}
-          <div class="text-xs {% if state.server == 'A' and state.server_side == 2 and not state.match_winner %}font-bold text-emerald-900{% else %}text-emerald-700{% endif %} truncate">{% if state.server == 'A' and state.server_side == 2 and not state.match_winner %}<span class="text-xl">🏓</span> {% endif %}/ {{ match.player_a2 }}</div>
+          <div class="text-xs truncate inline-block px-2 rounded {% if state.server == 'A' and state.server_side == 2 and not state.match_winner %}font-bold text-emerald-900 bg-sky-300{% else %}text-emerald-700{% endif %}">/ {{ match.player_a2 }}</div>
           {% if team_a %}<div class="text-[10px] mt-1 inline-block px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-700 font-bold border border-indigo-200">🏷️ {{ team_a }}</div>{% endif %}
         {% endif %}
         <div class="text-5xl sm:text-6xl font-black text-emerald-700 leading-none py-2">{{ state.a_score }}</div>
@@ -88,11 +87,10 @@
         </div>
         {% endif %}
         <div class="flex items-center justify-center gap-1 mb-1">
-          {% if state.server == 'B' and not state.match_winner and not (state.is_doubles and state.server_side == 2) %}<span class="text-xl">🏓</span>{% endif %}
-          <div class="font-bold text-emerald-900 truncate">{{ match.player_b }}</div>
+          <div class="font-bold text-emerald-900 truncate px-2 rounded {% if state.server == 'B' and not state.match_winner and not (state.is_doubles and state.server_side == 2) %}bg-sky-300{% endif %}">{{ match.player_b }}</div>
         </div>
         {% if state.is_doubles %}
-          <div class="text-xs {% if state.server == 'B' and state.server_side == 2 and not state.match_winner %}font-bold text-emerald-900{% else %}text-emerald-700{% endif %} truncate">{% if state.server == 'B' and state.server_side == 2 and not state.match_winner %}<span class="text-xl">🏓</span> {% endif %}/ {{ match.player_b2 }}</div>
+          <div class="text-xs truncate inline-block px-2 rounded {% if state.server == 'B' and state.server_side == 2 and not state.match_winner %}font-bold text-emerald-900 bg-sky-300{% else %}text-emerald-700{% endif %}">/ {{ match.player_b2 }}</div>
           {% if team_b %}<div class="text-[10px] mt-1 inline-block px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-700 font-bold border border-indigo-200">🏷️ {{ team_b }}</div>{% endif %}
         {% endif %}
         <div class="text-5xl sm:text-6xl font-black text-emerald-700 leading-none py-2">{{ state.b_score }}</div>
