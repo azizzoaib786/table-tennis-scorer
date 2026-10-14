@@ -269,6 +269,19 @@ def _side_label(t: Dict[str, Any], slot: Dict[str, Any], side: str) -> Tuple[str
     return (n1, [pid])
 
 
+def _participant_level(t: Optional[Dict[str, Any]], pid: Optional[str]) -> str:
+    """Skill level label (Advanced / Intermediate / Beginner) of a participant, or ''."""
+    if not pid:
+        return ""
+    for p in (t or {}).get("participants") or []:
+        if p.get("id") == pid:
+            return p.get("level") or ""
+    return ""
+
+
+templates.env.globals["participant_level"] = _participant_level
+
+
 def _pool_standings(t: Dict[str, Any], rnd: Dict[str, Any]) -> Dict[str, Any]:
     """Standings of one pool round. Rank = wins desc, NRR desc, points-for
     desc, name. NRR is the cumulative point difference over the group matches
@@ -283,6 +296,7 @@ def _pool_standings(t: Dict[str, Any], rnd: Dict[str, Any]) -> Dict[str, Any]:
         if key not in rows:
             label, members = _side_label(t, slot, side)
             rows[key] = {"key": key, "label": label, "members": members,
+                         "level": _participant_level(t, slot.get(f"{side}_id")),
                          "played": 0, "wins": 0, "losses": 0, "pf": 0, "pa": 0}
         return rows[key]
 

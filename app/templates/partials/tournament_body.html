@@ -1,3 +1,4 @@
+{% from "partials/level_badge.html" import level_badge %}
 <div class="space-y-4">
   {% if flash %}
   <div class="bg-white rounded-2xl border-2 border-sky-300 shadow-md p-3 text-center text-sky-900 font-bold">{{ flash }}</div>
@@ -437,9 +438,9 @@
               {% endif %}
               <div class="font-bold text-emerald-900 truncate">
                 {% if is_doubles %}
-                  {{ m.a_name }} / {{ m.a2_name }} <span class="text-slate-400">vs</span> {{ m.b_name }} / {{ m.b2_name }}
+                  {{ m.a_name }} / {{ m.a2_name }} {{ level_badge(participant_level(tournament, m.a_id)) }} <span class="text-slate-400">vs</span> {{ m.b_name }} / {{ m.b2_name }} {{ level_badge(participant_level(tournament, m.b_id)) }}
                 {% else %}
-                  {{ m.a_name }} <span class="text-slate-400">vs</span> {{ m.b_name }}
+                  {{ m.a_name }} {{ level_badge(participant_level(tournament, m.a_id)) }} <span class="text-slate-400">vs</span> {{ m.b_name }} {{ level_badge(participant_level(tournament, m.b_id)) }}
                 {% endif %}
               </div>
             </div>

@@ -1,4 +1,5 @@
 {# Expects `standings` = list of pool standings (see main._pool_standings). #}
+{% from "partials/level_badge.html" import level_badge %}
 {% if standings %}
 <div class="mt-4 bg-white rounded-2xl border-2 border-fuchsia-200 shadow-lg p-4">
   <h2 class="text-lg font-bold text-fuchsia-900">📊 Group standings</h2>
@@ -31,7 +32,7 @@
           {% for r in g.rows %}
           <tr class="border-t border-fuchsia-100 text-right {% if r.qualified %}bg-emerald-50 font-semibold{% endif %}">
             <td class="px-2 py-1 text-left text-slate-500">{{ r.rank }}</td>
-            <td class="px-2 py-1 text-left text-slate-900">{{ r.label }}{% if r.qualified %} <span class="text-[10px] text-emerald-700 font-bold">Q</span>{% endif %}</td>
+            <td class="px-2 py-1 text-left text-slate-900">{{ r.label }} {{ level_badge(r.level) }}{% if r.qualified %} <span class="text-[10px] text-emerald-700 font-bold">Q</span>{% endif %}</td>
             <td class="px-1 py-1">{{ r.played }}</td>
             <td class="px-1 py-1">{{ r.wins }}</td>
             <td class="px-1 py-1">{{ r.losses }}</td>
