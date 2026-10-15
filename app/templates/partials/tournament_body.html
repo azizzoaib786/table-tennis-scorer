@@ -95,6 +95,39 @@
       </form>
     </details>
 
+    {% if user and user.is_admin and tournament.format == 'doubles' and tournament.participants %}
+    <details class="mb-3">
+      <summary class="cursor-pointer text-xs font-bold text-fuchsia-800">🔁 Substitute a team (new team takes its place in the same pool)</summary>
+      <form hx-post="/tournaments/{{ tournament.tournament_id }}/teams/substitute"
+            hx-target="#tournament-body" hx-swap="innerHTML"
+            hx-confirm="Hand all not-yet-started matches of the old team to the new team?"
+            class="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-2">
+        <div class="sm:col-span-2">
+          <label class="text-[10px] font-bold text-fuchsia-900 block">Team being replaced</label>
+          <select name="old_team" required class="w-full rounded-lg border-2 border-fuchsia-200 px-2 py-1 text-sm">
+            {% for p in tournament.participants if p.team_name and p.is_primary %}<option>{{ p.team_name }}</option>{% endfor %}
+          </select>
+        </div>
+        <div class="sm:col-span-2">
+          <label class="text-[10px] font-bold text-fuchsia-900 block">Replacement: an existing team ...</label>
+          <select name="existing_team" class="w-full rounded-lg border-2 border-fuchsia-200 px-2 py-1 text-sm">
+            <option value="">- none (create a new team below) -</option>
+            {% for p in tournament.participants if p.team_name and p.is_primary %}<option>{{ p.team_name }}</option>{% endfor %}
+          </select>
+        </div>
+        <div class="sm:col-span-2 text-[10px] font-bold text-fuchsia-900">... or a brand new team</div>
+        <input name="new_team_name" placeholder="New team name" class="rounded-lg border-2 border-fuchsia-200 px-2 py-1 text-sm"/>
+        <input name="level" placeholder="Level (optional: A / B / I)" class="rounded-lg border-2 border-fuchsia-200 px-2 py-1 text-sm"/>
+        <input name="player1" placeholder="Player 1" class="rounded-lg border-2 border-fuchsia-200 px-2 py-1 text-sm"/>
+        <input name="player2" placeholder="Player 2" class="rounded-lg border-2 border-fuchsia-200 px-2 py-1 text-sm"/>
+        <div class="sm:col-span-2 flex items-center gap-2">
+          <button class="rounded-lg bg-fuchsia-600 hover:bg-fuchsia-700 text-white font-bold px-3 py-1.5 text-sm">Substitute</button>
+          <span class="text-[10px] text-fuchsia-700">Only matches not yet started are handed over; started or finished matches keep the old team.</span>
+        </div>
+      </form>
+    </details>
+    {% endif %}
+
     {% if tournament.participants %}
     <div class="flex flex-wrap gap-2">
       {% for p in tournament.participants %}

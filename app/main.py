@@ -2819,6 +2819,99 @@ def remove_team(request: Request, tournament_id: str, team_name: str = Form(...)
     })
 
 
+@app.post("/tournaments/{tournament_id}/teams/substitute", response_class=HTMLResponse)
+def substitute_team(request: Request, tournament_id: str, old_team: str = Form(...),
+                    existing_team: str = Form(""), new_team_name: str = Form(""),
+                    player1: str = Form(""), player2: str = Form(""), level: str = Form("")):
+    """Admin: put a replacement team into the removed team's place. The new
+    team (an existing one, or created here from two player names) takes over
+    every not-yet-started match of the old team in every round, so it lands in
+    the same pool with the same opponents, tables and times. Started or
+    finished matches keep the old team."""
+    user, t = check_tournament_access(request, tournament_id)
+
+    def norm(s: str) -> str:
+        return re.sub(r"\s+", " ", s or "").strip().lower()
+
+    participants = t.get("participants", [])
+    old = [p for p in participants if norm(p.get("team_name")) == norm(old_team)]
+    if len(old) != 2:
+        raise HTTPException(400, "The team to replace must be a doubles team with 2 players")
+    old_ids = {p["id"] for p in old}
+
+    if existing_team.strip():
+        new = [p for p in participants if norm(p.get("team_name")) == norm(existing_team)]
+        if len(new) != 2:
+            raise HTTPException(400, "The replacement must be a doubles team with 2 players")
+        new = sorted(new, key=lambda p: not p.get("is_primary"))
+        created = False
+    else:
+        p1, p2, tn = player1.strip(), player2.strip(), new_team_name.strip()
+        if not (p1 and p2 and tn):
+            raise HTTPException(400, "Enter the team name and both player names (or pick an existing team)")
+        taken = {norm(p.get("name")) for p in participants} | {norm(p.get("team_name")) for p in participants}
+        if norm(p1) in taken or norm(p2) in taken or norm(tn) in taken or norm(p1) == norm(p2):
+            raise HTTPException(400, "A player or team with that name already exists")
+        pair_id = uuid.uuid4().hex[:8]
+        new = [
+            {"id": uuid.uuid4().hex[:8], "name": p1, "team_name": tn, "partner_name": p2,
+             "pair_id": pair_id, "is_primary": True, "level": level.strip(), "user_id": ""},
+            {"id": uuid.uuid4().hex[:8], "name": p2, "team_name": tn, "partner_name": p1,
+             "pair_id": pair_id, "is_primary": False, "level": level.strip(), "user_id": ""},
+        ]
+        created = True
+    new_ids = {p["id"] for p in new}
+    if new_ids == old_ids:
+        raise HTTPException(400, "Pick a different team")
+
+    rounds = t.get("rounds", [])
+    # A pool that has already started (any match started or decided) is locked.
+    for r in rounds:
+        if r.get("stage_type") == "pool" and any(_slot_ids(s) & old_ids for s in r.get("matches", [])) \
+                and any(not _slot_untouched(s) for s in r.get("matches", [])):
+            raise HTTPException(400, f"{r.get('name', 'The pool')} has already started - "
+                                     "a team can only be substituted before its pool starts")
+    # Existing replacement team must not already be playing in a round we touch.
+    if not created:
+        for r in rounds:
+            slots = r.get("matches", [])
+            touches_old = any(_slot_ids(s) & old_ids and _slot_untouched(s) for s in slots)
+            if touches_old and any(_slot_ids(s) & new_ids for s in slots):
+                raise HTTPException(400, f"{existing_team} is already in {r.get('name', 'a round')}")
+
+    changed = 0
+    still_used = False
+    for r in rounds:
+        for s in r.get("matches", []):
+            if not (_slot_ids(s) & old_ids):
+                continue
+            if not _slot_untouched(s):
+                still_used = True
+                continue
+            for side in ("a", "b"):
+                if s.get(f"{side}_id") in old_ids:
+                    s[f"{side}_id"], s[f"{side}_name"] = new[0]["id"], new[0]["name"]
+                    s[f"{side}2_id"], s[f"{side}2_name"] = new[1]["id"], new[1]["name"]
+                    changed += 1
+    if not changed:
+        raise HTTPException(400, "That team has no unstarted matches to hand over")
+
+    if created:
+        participants.extend(new)
+    if not still_used:
+        participants = [p for p in participants if p.get("id") not in old_ids]
+    update_tournament(tournament_id, "SET participants = :p, rounds = :r",
+                      {":p": participants, ":r": rounds})
+    label = new[0].get("team_name") or " & ".join(p["name"] for p in new)
+    flash = f"{label} now plays {changed} unstarted match(es) in place of {old_team}."
+    if still_used:
+        flash += f" {old_team} stays listed because some of its matches already started."
+    return templates.TemplateResponse("partials/tournament_body.html", {
+        "request": request, "user": user, "tournament": must_tournament(tournament_id),
+        "roster": list_roster(), "flash": flash,
+    })
+
+
 @app.post("/tournaments/{tournament_id}/participants/rename", response_class=HTMLResponse)
 def rename_participant(request: Request, tournament_id: str,
                        participant_id: str = Form(...), new_name: str = Form("")):
