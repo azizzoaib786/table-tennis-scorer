@@ -100,6 +100,16 @@
       {% for p in tournament.participants %}
       <div class="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-sky-100 border-2 border-sky-200 text-sky-900 font-medium text-sm">
         {{ p.name }}{% if p.is_primary %} <span class="text-[10px] font-bold text-indigo-700 bg-indigo-100 border border-indigo-200 rounded px-1" title="Primary registrant of this doubles pair">(P)</span>{% endif %}
+        <form hx-post="/tournaments/{{ tournament.tournament_id }}/participants/rename" hx-target="#tournament-body" hx-swap="innerHTML" hx-prompt="New name for {{ p.name }} (replaces them in unstarted matches only)" class="inline">
+          <input type="hidden" name="participant_id" value="{{ p.id }}"/>
+          <button class="ml-1 text-sky-500 hover:text-indigo-600 leading-none" title="Rename / replace player">✎</button>
+        </form>
+        {% if p.team_name and p.is_primary %}
+        <form hx-post="/tournaments/{{ tournament.tournament_id }}/teams/remove" hx-target="#tournament-body" hx-swap="innerHTML" hx-confirm="Remove team {{ p.team_name }}? Its unstarted matches are deleted; started matches are kept." class="inline">
+          <input type="hidden" name="team_name" value="{{ p.team_name }}"/>
+          <button class="ml-1 text-[10px] font-bold text-rose-600 hover:text-rose-800 leading-none" title="Remove whole team">Team ×</button>
+        </form>
+        {% endif %}
         <form hx-post="/tournaments/{{ tournament.tournament_id }}/participants/remove" hx-target="#tournament-body" hx-swap="innerHTML" hx-confirm="Remove {{ p.name }}?" class="inline">
           <input type="hidden" name="participant_id" value="{{ p.id }}"/>
           <button class="ml-1 text-sky-500 hover:text-red-500 font-bold leading-none">×</button>

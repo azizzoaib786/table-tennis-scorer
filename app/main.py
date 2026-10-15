@@ -2771,6 +2771,92 @@ def remove_participant(request: Request, tournament_id: str, participant_id: str
     })
 
 
+def _slot_untouched(s: Dict[str, Any]) -> bool:
+    """True for a bracket slot that has not been started or decided."""
+    return not s.get("match_id") and s.get("winner") not in ("A", "B")
+
+
+def _slot_ids(s: Dict[str, Any]) -> set:
+    return {s.get(k) for k in ("a_id", "a2_id", "b_id", "b2_id") if s.get(k)}
+
+
+@app.post("/tournaments/{tournament_id}/teams/remove", response_class=HTMLResponse)
+def remove_team(request: Request, tournament_id: str, team_name: str = Form(...)):
+    """Admin: drop a whole doubles team. Only not-yet-started matches are
+    touched (they are deleted from every round); started/finished matches keep
+    their record, and in that case the team stays in the participant list."""
+    user, t = check_tournament_access(request, tournament_id)
+    key = re.sub(r"\s+", " ", team_name).strip().lower()
+    members = [p for p in t.get("participants", [])
+               if re.sub(r"\s+", " ", p.get("team_name") or "").strip().lower() == key]
+    if not members:
+        raise HTTPException(404, "Team not found")
+    ids = {p["id"] for p in members}
+    rounds = t.get("rounds", [])
+    removed = kept = 0
+    for r in rounds:
+        keep = []
+        for s in r.get("matches", []):
+            if _slot_ids(s) & ids:
+                if _slot_untouched(s):
+                    removed += 1
+                    continue
+                kept += 1
+            keep.append(s)
+        r["matches"] = keep
+    if removed:
+        update_tournament(tournament_id, "SET rounds = :r", {":r": rounds})
+    if kept:
+        flash = (f"Removed {removed} unstarted match(es) of {team_name}. The team stays in the list "
+                 f"because {kept} match(es) already started/finished.")
+    else:
+        participants = [p for p in t.get("participants", []) if p.get("id") not in ids]
+        update_tournament(tournament_id, "SET participants = :p", {":p": participants})
+        flash = f"Removed team {team_name} and {removed} unstarted match(es)."
+    return templates.TemplateResponse("partials/tournament_body.html", {
+        "request": request, "user": user, "tournament": must_tournament(tournament_id),
+        "roster": list_roster(), "flash": flash,
+    })
+
+
+@app.post("/tournaments/{tournament_id}/participants/rename", response_class=HTMLResponse)
+def rename_participant(request: Request, tournament_id: str,
+                       participant_id: str = Form(...), new_name: str = Form("")):
+    """Admin: replace/rename one player (e.g. a no-show partner). Only
+    not-yet-started matches pick up the new name; started/finished ones keep
+    the name they were played under."""
+    user, t = check_tournament_access(request, tournament_id)
+    new_name = (new_name or request.headers.get("HX-Prompt") or "").strip()
+    if not new_name:
+        raise HTTPException(400, "Name required")
+    participants = t.get("participants", [])
+    p = next((x for x in participants if x.get("id") == participant_id), None)
+    if not p:
+        raise HTTPException(404, "Participant not found")
+    if any(x.get("id") != participant_id and (x.get("name") or "").lower() == new_name.lower()
+           for x in participants):
+        raise HTTPException(400, f"{new_name} is already a participant")
+    old_name = p.get("name", "")
+    p["name"] = new_name
+    rounds = t.get("rounds", [])
+    n = 0
+    for r in rounds:
+        for s in r.get("matches", []):
+            if not _slot_untouched(s):
+                continue
+            for side in ("a", "a2", "b", "b2"):
+                if s.get(f"{side}_id") == participant_id:
+                    s[f"{side}_name"] = new_name
+                    n += 1
+    update_tournament(tournament_id, "SET participants = :p, rounds = :r",
+                      {":p": participants, ":r": rounds})
+    return templates.TemplateResponse("partials/tournament_body.html", {
+        "request": request, "user": user, "tournament": must_tournament(tournament_id),
+        "roster": list_roster(),
+        "flash": f"Renamed {old_name} to {new_name} in {n} unstarted match(es).",
+    })
+
+
 @app.post("/tournaments/{tournament_id}/participants/bulk", response_class=HTMLResponse)
 def bulk_add_participants(request: Request, tournament_id: str, names: str = Form(...)):
     """Add many participants at once. Accepts one name per line
