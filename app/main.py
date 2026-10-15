@@ -281,6 +281,7 @@ def _participant_level(t: Optional[Dict[str, Any]], pid: Optional[str]) -> str:
 
 
 templates.env.globals["participant_level"] = _participant_level
+templates.env.globals["side_team"] = lambda t, slot, side: _side_label(t, slot, side)[0]
 
 
 def _final_popup(match: Dict[str, Any], state: Dict[str, Any]) -> Optional[Dict[str, Any]]:
@@ -826,6 +827,13 @@ def match_context(request: Request, match: Dict[str, Any], user: Optional[Dict[s
                     if nm2:
                         reg2 = find_registration_by_name(tid, nm2)
                         team = (reg2.get("team_name") if reg2 else "") or ""
+                if not team:
+                    # Fall back to the tournament's own participant list.
+                    tt = get_tournament(tid) or {}
+                    names = {(p.get("name") or "").strip(): p for p in (tt.get("participants") or [])}
+                    nm2 = (match.get(partner_field) or "").strip()
+                    team = ((names.get(nm) or {}).get("team_name")
+                            or (names.get(nm2) or {}).get("team_name") or "")
                 if side == "a":
                     team_a = team
                 else:
@@ -3792,8 +3800,7 @@ def start_pair_match(request: Request, tournament_id: str, round_num: int, slot:
     match_type = pair.get("match_type", "singles")
     if match_type == "doubles":
         name = (f"{t['name']} — {target_round['name']}: "
-                f"{pair['a_name']}/{pair.get('a2_name','')} vs "
-                f"{pair['b_name']}/{pair.get('b2_name','')}")
+                f"{_side_label(t, pair, 'a')[0]} vs {_side_label(t, pair, 'b')[0]}")
     else:
         name = f"{t['name']} — {target_round['name']}: {pair['a_name']} vs {pair['b_name']}"
 

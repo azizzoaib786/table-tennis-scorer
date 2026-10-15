@@ -67,6 +67,7 @@
           {% if state.is_doubles and photo_a2 %}<img src="{{ photo_a2 }}" alt="{{ match.player_a2 }}" class="w-12 h-12 rounded-full object-cover border-2 border-emerald-200"/>{% endif %}
         </div>
         {% endif %}
+        {% if team_a %}<div class="text-lg font-black text-indigo-800 truncate">{{ team_a }}</div>{% endif %}
         <div class="flex items-center justify-center gap-1 mb-1">
           <div class="font-bold text-emerald-900 truncate px-2 rounded {% if state.server == 'A' and not state.match_winner and not (state.is_doubles and state.server_side == 2) %}bg-sky-300{% endif %}">{{ match.player_a }}</div>
         </div>
@@ -86,6 +87,7 @@
           {% if state.is_doubles and photo_b2 %}<img src="{{ photo_b2 }}" alt="{{ match.player_b2 }}" class="w-12 h-12 rounded-full object-cover border-2 border-emerald-200"/>{% endif %}
         </div>
         {% endif %}
+        {% if team_b %}<div class="text-lg font-black text-indigo-800 truncate">{{ team_b }}</div>{% endif %}
         <div class="flex items-center justify-center gap-1 mb-1">
           <div class="font-bold text-emerald-900 truncate px-2 rounded {% if state.server == 'B' and not state.match_winner and not (state.is_doubles and state.server_side == 2) %}bg-sky-300{% endif %}">{{ match.player_b }}</div>
         </div>

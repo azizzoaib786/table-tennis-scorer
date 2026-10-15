@@ -124,9 +124,10 @@
                 </div>
                 <div class="mt-1 font-bold text-emerald-900 truncate">
                   {% if is_doubles %}
-                    {{ m.a_name }} / {{ m.a2_name }}
+                    {{ side_team(tournament, m, 'a') }}
                     <span class="text-slate-400">vs</span>
-                    {{ m.b_name }} / {{ m.b2_name }}
+                    {{ side_team(tournament, m, 'b') }}
+                    <span class="block text-[11px] font-normal text-slate-500 truncate">{{ m.a_name }} / {{ m.a2_name }} &nbsp;vs&nbsp; {{ m.b_name }} / {{ m.b2_name }}</span>
                   {% else %}
                     {{ m.a_name }} <span class="text-slate-400">vs</span> {{ m.b_name }}
                   {% endif %}

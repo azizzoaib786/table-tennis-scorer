@@ -433,13 +433,17 @@
               {% if m.table_number %}
                 <span class="text-[10px] px-2 py-0.5 rounded-full border bg-indigo-50 text-indigo-800 border-indigo-200 font-bold">🪧 Table {{ m.table_number }}</span>
               {% endif %}
+              {% if m.sched_start %}
+                <span class="text-[10px] px-2 py-0.5 rounded-full border bg-slate-50 text-slate-700 border-slate-200 font-bold">🕘 {{ m.sched_start }}–{{ m.sched_end }}</span>
+              {% endif %}
               {% set busy_msg = (busy.get(m.table_number|int) if (m.table_number and not m.match_id) else none) %}
               {% if busy_msg %}
                 <span class="text-[10px] px-2 py-0.5 rounded-full border bg-red-100 text-red-700 border-red-300 font-bold animate-pulse">🔒 Occupied: {{ busy_msg }}</span>
               {% endif %}
               <div class="font-bold text-emerald-900 truncate">
                 {% if is_doubles %}
-                  {{ m.a_name }} / {{ m.a2_name }} {{ level_badge(participant_level(tournament, m.a_id)) }} <span class="text-slate-400">vs</span> {{ m.b_name }} / {{ m.b2_name }} {{ level_badge(participant_level(tournament, m.b_id)) }}
+                  {{ side_team(tournament, m, 'a') }} {{ level_badge(participant_level(tournament, m.a_id)) }} <span class="text-slate-400">vs</span> {{ side_team(tournament, m, 'b') }} {{ level_badge(participant_level(tournament, m.b_id)) }}
+                  <span class="block text-[11px] font-normal text-slate-500 truncate">{{ m.a_name }} / {{ m.a2_name }} &nbsp;vs&nbsp; {{ m.b_name }} / {{ m.b2_name }}</span>
                 {% else %}
                   {{ m.a_name }} {{ level_badge(participant_level(tournament, m.a_id)) }} <span class="text-slate-400">vs</span> {{ m.b_name }} {{ level_badge(participant_level(tournament, m.b_id)) }}
                 {% endif %}
