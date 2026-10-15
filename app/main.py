@@ -3955,6 +3955,7 @@ def _build_rounds_view(t: Dict[str, Any]) -> List[Dict[str, Any]]:
                         games = st.get("games") or []
                         row["final_a"] = sum(int(g["a"]) for g in games)
                         row["final_b"] = sum(int(g["b"]) for g in games)
+                        row["game_scores"] = [[int(g["a"]), int(g["b"])] for g in games]
                         row["duration_label"] = st.get("duration_label", "")
                     else:
                         row["elapsed_label"] = st.get("elapsed_label", "")

@@ -41,7 +41,7 @@
   </head>
   <body>
     {% macro names(m, s) -%}
-      {%- if m.match_type == 'doubles' -%}{{ m['%s_name' % s] }} / {{ m['%s2_name' % s] }}{%- else -%}{{ m['%s_name' % s] }}{%- endif -%}
+      {%- if m.match_type == 'doubles' -%}{{ side_team(tournament, m, s) }}{%- else -%}{{ m['%s_name' % s] }}{%- endif -%}
     {%- endmacro %}
     <div id="app">
       <header>
@@ -76,7 +76,7 @@
           <div class="muted next" style="margin-top:.5vmin">Next: <b>{{ names(tb.next[0], 'a') }}</b> vs <b>{{ names(tb.next[0], 'b') }}</b></div>
           {% endif %}
           {% if tb.last %}
-          <div class="last">✅ {{ winner_slot_label(tournament, tb.last) or tb.last.winner_name }}{% if tb.last.final_a is not none %} ({{ tb.last.final_a }}–{{ tb.last.final_b }}){% endif %}</div>
+          <div class="last">✅ {{ winner_slot_label(tournament, tb.last) or tb.last.winner_name }}{% if tb.last.game_scores %}{% set wa = (tb.last.winner == 'A') %} ({{ tb.last.a_games if wa else tb.last.b_games }}–{{ tb.last.b_games if wa else tb.last.a_games }}: {% for g in tb.last.game_scores %}{{ g[0] if wa else g[1] }}-{{ g[1] if wa else g[0] }}{{ ', ' if not loop.last }}{% endfor %}){% elif tb.last.final_a is not none %} ({{ tb.last.final_a }}–{{ tb.last.final_b }}){% endif %}</div>
           {% endif %}
         </div>
         {% endfor %}
