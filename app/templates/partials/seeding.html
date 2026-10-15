@@ -1,0 +1,80 @@
+{% from "partials/level_badge.html" import level_badge %}
+{% set sd = seeding(tournament) %}
+{% set is_admin = user and user.is_admin %}
+{% if sd.seeds %}
+{% macro seed_btn(action, key, label, cls) %}
+<form hx-post="/tournaments/{{ tournament.tournament_id }}/seeds" hx-target="#tournament-body" hx-swap="innerHTML" class="inline">
+  <input type="hidden" name="action" value="{{ action }}"><input type="hidden" name="key" value="{{ key }}">
+  <button class="rounded px-1.5 py-0.5 text-xs font-bold {{ cls }}">{{ label }}</button>
+</form>
+{% endmacro %}
+<div class="mt-4 bg-white rounded-2xl border-2 border-amber-200 shadow-lg p-4">
+  <div class="flex items-center justify-between flex-wrap gap-2">
+    <h2 class="text-lg font-bold text-amber-900">🏅 Top {{ sd.seeds|length }} qualifiers</h2>
+    <span class="text-[10px] font-bold px-2 py-0.5 rounded-full {% if sd.ready %}bg-emerald-100 text-emerald-700 border border-emerald-300{% else %}bg-slate-100 text-slate-600 border border-slate-200{% endif %}">
+      {% if sd.ready %}FINAL{% else %}Provisional - pools in progress{% endif %}
+    </span>
+  </div>
+  <p class="text-[11px] text-amber-800 mb-3">
+    Ranked by wins, then NRR (net rally-point difference).{% if sd.manual %} <strong>Manually adjusted.</strong>{% endif %}
+  </p>
+  <table class="w-full text-sm">
+    <thead>
+      <tr class="text-[10px] uppercase text-slate-500 text-right">
+        <th class="px-2 py-1 text-left">#</th>
+        <th class="px-2 py-1 text-left">Team</th>
+        <th class="px-1 py-1 text-left">Pool</th>
+        <th class="px-1 py-1">W</th>
+        <th class="px-1 py-1">PF</th>
+        <th class="px-1 py-1">PA</th>
+        <th class="px-2 py-1">NRR</th>
+        {% if is_admin %}<th class="px-1 py-1"></th>{% endif %}
+      </tr>
+    </thead>
+    <tbody>
+      {% for r in sd.seeds %}
+      <tr class="border-t border-amber-100 text-right">
+        <td class="px-2 py-1 text-left font-bold text-slate-600">{{ r.seed }}</td>
+        <td class="px-2 py-1 text-left text-slate-900 font-semibold">{{ r.label }} {{ level_badge(r.level) }}
+          {% if r.tied %}<span class="text-[10px] font-bold text-orange-700 bg-orange-100 rounded px-1">TIE</span>{% endif %}
+          {% if r.manual %}<span class="text-[10px] font-bold text-indigo-700 bg-indigo-100 rounded px-1">MANUAL</span>{% endif %}</td>
+        <td class="px-1 py-1 text-left text-slate-500">{{ r.pool }}</td>
+        <td class="px-1 py-1">{{ r.wins }}</td>
+        <td class="px-1 py-1">{{ r.pf }}</td>
+        <td class="px-1 py-1">{{ r.pa }}</td>
+        <td class="px-2 py-1 font-mono {% if r.nrr > 0 %}text-emerald-700{% elif r.nrr < 0 %}text-rose-600{% endif %}">{{ '%+d' % r.nrr }}</td>
+        {% if is_admin %}
+        <td class="px-1 py-1 whitespace-nowrap">
+          {{ seed_btn('up', r.key, '↑', 'bg-slate-100 hover:bg-slate-200') }}
+          {{ seed_btn('down', r.key, '↓', 'bg-slate-100 hover:bg-slate-200') }}
+          {{ seed_btn('out', r.key, 'Remove', 'bg-rose-100 hover:bg-rose-200 text-rose-700') }}
+        </td>
+        {% endif %}
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% if is_admin %}
+  <div class="mt-3 flex flex-wrap items-end gap-2">
+    <form hx-post="/tournaments/{{ tournament.tournament_id }}/seeds" hx-target="#tournament-body" hx-swap="innerHTML" class="flex items-end gap-2">
+      <input type="hidden" name="action" value="in">
+      <div>
+        <label class="text-[10px] font-bold text-amber-900 block">Bring in another team</label>
+        <select name="key" required class="rounded-lg border-2 border-amber-200 px-2 py-1 text-sm">
+          {% for r in sd.others %}<option value="{{ r.key }}">{{ r.label }} ({{ r.pool }}, {{ r.wins }}W {{ '%+d' % r.nrr }})</option>{% endfor %}
+        </select>
+      </div>
+      <button class="rounded-lg bg-amber-600 hover:bg-amber-700 text-white font-bold px-3 py-1.5 text-sm">Add</button>
+    </form>
+    {% if sd.manual %}
+    <form hx-post="/tournaments/{{ tournament.tournament_id }}/seeds" hx-target="#tournament-body" hx-swap="innerHTML"
+          hx-confirm="Discard all manual changes?">
+      <input type="hidden" name="action" value="reset_all">
+      <button class="rounded-lg bg-slate-200 hover:bg-slate-300 font-bold px-3 py-1.5 text-sm">Reset to automatic</button>
+    </form>
+    {% endif %}
+  </div>
+  <p class="text-[10px] text-amber-700 mt-1">Remove drops a team from the list; Add brings in any non-qualified team. Use the arrows to settle ties. These teams are the only ones selectable for the next knockout round.</p>
+  {% endif %}
+</div>
+{% endif %}

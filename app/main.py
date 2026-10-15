@@ -283,6 +283,42 @@ def _participant_level(t: Optional[Dict[str, Any]], pid: Optional[str]) -> str:
 templates.env.globals["participant_level"] = _participant_level
 
 
+def _final_popup(match: Dict[str, Any], state: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """Winner pop-up data for a finished tournament final (Cup Final / Plate
+    Final / 3rd-place playoff). None for every other match."""
+    winner = state.get("match_winner")
+    tid = match.get("tournament_id")
+    if winner not in ("A", "B") or not tid:
+        return None
+    t = get_tournament(tid)
+    if not t:
+        return None
+    rnd = next((r for r in (t.get("rounds") or [])
+                if int(r.get("round_num", 0)) == int(match.get("round_num") or 0)), None)
+    if not rnd:
+        return None
+    name = (rnd.get("name") or "").strip()
+    low = name.lower()
+    is_final = (("final" in low and "semi" not in low and "quarter" not in low)
+                or rnd.get("stage_type") == "plate")
+    if not is_final:
+        return None
+    sfx = "2" if match.get("match_type") == "doubles" else None
+    names = [match.get("player_a" if winner == "A" else "player_b") or ""]
+    if sfx:
+        names.append(match.get("player_a2" if winner == "A" else "player_b2") or "")
+    return {
+        "title": name,
+        "winner_label": _winning_side_label(match, t, winner),
+        "members": [n for n in names if n],
+        "games": f"{state.get('a_games', 0)} - {state.get('b_games', 0)}",
+        "duration": state.get("duration_label") or "",
+    }
+
+
+templates.env.globals["final_popup"] = _final_popup
+
+
 def _slot_duration_label(slot: Dict[str, Any]) -> str:
     """How long a finished tournament match took ('' if unknown / walkover).
     Uses the value cached at finalization, else derives it from the events."""
@@ -342,9 +378,13 @@ def _pool_standings(t: Dict[str, Any], rnd: Dict[str, Any]) -> Dict[str, Any]:
     for r in ordered:
         r["nrr"] = r["pf"] - r["pa"]
     ordered.sort(key=lambda r: (-r["wins"], -r["nrr"], -r["pf"], r["label"].lower()))
+    ov = t.get("seed_overrides") or {}
+    out_ids, in_ids = set(ov.get("out") or []), set(ov.get("in") or [])
     for i, r in enumerate(ordered, start=1):
         r["rank"] = i
-        r["qualified"] = i <= qualify
+        r["auto_qualified"] = i <= qualify
+        r["qualified"] = (i <= qualify and r["key"] not in out_ids) or r["key"] in in_ids
+        r["manual"] = r["qualified"] != r["auto_qualified"]
     return {
         "round_num": int(rnd.get("round_num", 0)),
         "name": rnd.get("name", ""),
@@ -374,14 +414,48 @@ def _qualified_participant_ids(t: Dict[str, Any], before_round: int) -> Optional
     if not pools:
         return None
     ids: set = set()
+    forced_in = set((t.get("seed_overrides") or {}).get("in") or [])
     for r in pools:
         st = _pool_standings(t, r)
-        if not st["complete"]:
-            continue
         for row in st["rows"]:
-            if row["qualified"]:
+            if row["qualified"] and (st["complete"] or row["key"] in forced_in):
                 ids.update(x for x in row["members"] if x)
     return ids
+
+
+def _seeding(t: Dict[str, Any]) -> Dict[str, Any]:
+    """Overall ranking of all pool qualifiers (wins, then NRR), honouring the
+    admin's manual out/in/order overrides. `others` = non-qualified teams that
+    can be brought in manually."""
+    pools = _all_pool_standings(t)
+    ov = t.get("seed_overrides") or {}
+    order = list(ov.get("order") or [])
+    seeds: List[Dict[str, Any]] = []
+    others: List[Dict[str, Any]] = []
+    for g in pools:
+        for row in g["rows"]:
+            item = dict(row, pool=g["name"])
+            (seeds if row["qualified"] else others).append(item)
+
+    def auto(r):
+        return (-r["wins"], -r["nrr"], -r["pf"], r["label"].lower())
+
+    seeds.sort(key=lambda r: (order.index(r["key"]) if r["key"] in order else 10 ** 6, auto(r)))
+    others.sort(key=auto)
+    for i, r in enumerate(seeds, start=1):
+        r["seed"] = i
+    # flag exact ties (same wins + NRR) so the admin can decide manually
+    for i, r in enumerate(seeds):
+        r["tied"] = any(j != i and (s["wins"], s["nrr"]) == (r["wins"], r["nrr"])
+                        for j, s in enumerate(seeds))
+    return {
+        "seeds": seeds, "others": others,
+        "ready": bool(pools) and all(g["complete"] for g in pools),
+        "manual": bool(ov.get("out") or ov.get("in") or ov.get("order")),
+    }
+
+
+templates.env.globals["seeding"] = _seeding
 
 
 def _build_table_board(t: Dict[str, Any], rounds_view: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
@@ -3397,6 +3471,48 @@ def bulk_add_pairs(request: Request, tournament_id: str, round_num: int,
         "request": request, "user": user, "tournament": t2,
         "roster": list_roster(),
         "flash": " • ".join(flash_parts) or "No pairings added",
+    })
+
+
+@app.post("/tournaments/{tournament_id}/seeds", response_class=HTMLResponse)
+def adjust_seeds(request: Request, tournament_id: str,
+                 action: str = Form(...), key: str = Form("")):
+    """Manual changes to the top-16: drop a team (out), bring one in (in), move
+    a seed up/down (ties), or reset."""
+    user, t = check_tournament_access(request, tournament_id)
+    ov = {k: list(v) for k, v in (t.get("seed_overrides") or {}).items()}
+    for k in ("out", "in", "order"):
+        ov.setdefault(k, [])
+    flash = "✅ Seeding updated"
+    if action == "out":
+        if key in ov["in"]:
+            ov["in"].remove(key)
+        elif key not in ov["out"]:
+            ov["out"].append(key)
+    elif action == "in":
+        if key in ov["out"]:
+            ov["out"].remove(key)
+        elif key not in ov["in"]:
+            ov["in"].append(key)
+    elif action in ("up", "down"):
+        t["seed_overrides"] = ov
+        keys = [r["key"] for r in _seeding(t)["seeds"]]
+        if key in keys:
+            i = keys.index(key)
+            j = i - 1 if action == "up" else i + 1
+            if 0 <= j < len(keys):
+                keys[i], keys[j] = keys[j], keys[i]
+                ov["order"] = keys
+    elif action == "reset_order":
+        ov["order"] = []
+    elif action == "reset_all":
+        ov = {"out": [], "in": [], "order": []}
+    else:
+        raise HTTPException(400, "Unknown action")
+    update_tournament(tournament_id, "SET seed_overrides = :s", {":s": ov})
+    return templates.TemplateResponse("partials/tournament_body.html", {
+        "request": request, "user": user, "tournament": must_tournament(tournament_id),
+        "roster": list_roster(), "flash": flash,
     })
 
 

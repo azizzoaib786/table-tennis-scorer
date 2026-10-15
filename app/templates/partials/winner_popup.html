@@ -1,0 +1,41 @@
+{# Needs `match` and `state`. Shows a champion pop-up once a tournament final is decided. #}
+{% set fp = final_popup(match, state) if state.match_winner else None %}
+{% if fp %}
+<div id="winner-popup" data-key="tt-win-{{ match.match_id }}" style="display:none"
+     class="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/75">
+  <style>
+    @keyframes ttpop { 0% { transform: scale(.6); opacity: 0 } 70% { transform: scale(1.05) } 100% { transform: scale(1); opacity: 1 } }
+    @keyframes ttfall { 0% { transform: translateY(-10vh) rotate(0deg); opacity: 1 } 100% { transform: translateY(110vh) rotate(360deg); opacity: .9 } }
+    #winner-popup .tt-card { animation: ttpop .5s ease-out both }
+    #winner-popup .tt-conf { position: fixed; top: 0; font-size: 28px; animation: ttfall linear infinite; pointer-events: none }
+  </style>
+  {% for i in range(14) %}
+  <span class="tt-conf" style="left: {{ (i * 7 + 3) % 100 }}%; animation-duration: {{ 3 + (i % 5) }}s; animation-delay: -{{ i % 4 }}s">{{ ['🎉','🏆','✨','🏓','🥇'][i % 5] }}</span>
+  {% endfor %}
+  <div class="tt-card relative w-full max-w-md rounded-3xl border-4 border-amber-300 bg-gradient-to-b from-amber-100 via-yellow-50 to-white p-6 text-center shadow-2xl">
+    <div class="text-6xl">🏆</div>
+    <div class="mt-1 text-xs font-bold uppercase tracking-widest text-amber-700">{{ fp.title }}</div>
+    <div class="mt-1 text-2xl font-black text-amber-900">CHAMPIONS</div>
+    <div class="mt-4 text-3xl sm:text-4xl font-black text-emerald-800 leading-tight">{{ fp.winner_label }}</div>
+    {% if fp.members|length > 1 %}
+    <div class="mt-1 text-sm font-semibold text-emerald-700">{{ fp.members|join(' & ') }}</div>
+    {% endif %}
+    <div class="mt-4 text-sm font-bold text-slate-600">Games {{ fp.games }}{% if fp.duration %} &middot; ⏱ {{ fp.duration }}{% endif %}</div>
+    <button type="button" onclick="ttCloseWinner()"
+            class="mt-5 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 px-6 py-2 font-bold text-white shadow">Close</button>
+  </div>
+  <script>
+    (function () {
+      var el = document.getElementById('winner-popup');
+      if (!el) return;
+      window.ttCloseWinner = function () {
+        try { localStorage.setItem(el.dataset.key, '1'); } catch (e) {}
+        el.style.display = 'none';
+      };
+      var seen = false;
+      try { seen = localStorage.getItem(el.dataset.key) === '1'; } catch (e) {}
+      if (!seen) el.style.display = 'flex';
+    })();
+  </script>
+</div>
+{% endif %}

@@ -143,6 +143,8 @@
     {% endif %}
   </div>
 
+  {% include "partials/winner_popup.html" %}
+
   <!-- Server / receiver indicator -->
   {% if not state.match_winner %}
   <div class="bg-white rounded-2xl border-2 {% if state.side_change_alert %}border-fuchsia-400 bg-fuchsia-50{% elif state.service_change %}border-sky-400 bg-sky-50{% else %}border-emerald-200{% endif %} shadow-md p-4 text-center">
