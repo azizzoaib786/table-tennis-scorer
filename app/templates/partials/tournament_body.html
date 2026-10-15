@@ -483,7 +483,7 @@
               {% if busy_msg %}
                 <span class="text-[10px] px-2 py-0.5 rounded-full border bg-red-100 text-red-700 border-red-300 font-bold animate-pulse">🔒 Occupied: {{ busy_msg }}</span>
               {% endif %}
-              <div class="font-bold text-emerald-900 truncate">
+              <div class="font-bold text-emerald-900 truncate basis-full w-full">
                 {% if is_doubles %}
                   {{ side_team(tournament, m, 'a') }} {{ level_badge(participant_level(tournament, m.a_id)) }} <span class="text-slate-400">vs</span> {{ side_team(tournament, m, 'b') }} {{ level_badge(participant_level(tournament, m.b_id)) }}
                   <span class="block text-[11px] font-normal text-slate-500 truncate">{{ m.a_name }} / {{ m.a2_name }} &nbsp;vs&nbsp; {{ m.b_name }} / {{ m.b2_name }}</span>
