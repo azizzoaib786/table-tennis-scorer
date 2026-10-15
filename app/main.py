@@ -3999,6 +3999,46 @@ def update_tournament_config(request: Request, tournament_id: str,
     return RedirectResponse(f"/tournaments/{tournament_id}", status_code=303)
 
 
+_TV_STAGES = {
+    "top8": "Top 8 - Quarter Finals",
+    "top4": "Top 4 - Semi Finals",
+    "finals": "Finals",
+}
+
+
+def _tv_stage_match(stage: str, r: Dict[str, Any]) -> bool:
+    low = (r.get("name") or "").lower()
+    if r.get("stage_type") == "pool":
+        return False
+    if stage == "top8":
+        return "quarter" in low
+    if stage == "top4":
+        return "semi" in low
+    return r.get("stage_type") == "plate" or ("final" in low and "semi" not in low and "quarter" not in low)
+
+
+@app.get("/live/tournaments/{tournament_id}/tv/{stage}", response_class=HTMLResponse)
+def live_tournament_tv_stage(request: Request, tournament_id: str, stage: str):
+    """Full-screen TV board for one knockout stage: top8, top4 or finals."""
+    if stage == "qualifiers":
+        return live_tournament_tv_qualifiers(request, tournament_id)
+    if stage not in _TV_STAGES:
+        raise HTTPException(404, "Unknown stage")
+    t = get_tournament(tournament_id)
+    if not t:
+        raise HTTPException(404, "Tournament not found")
+    rounds = [r for r in _build_rounds_view(t)
+              if _tv_stage_match(stage, {"name": r["name"], "stage_type": r["stage_type"]})]
+    biggest = max((len(r["matches"]) for r in rounds), default=1)
+    return templates.TemplateResponse("tv_stage.html", {
+        "request": request,
+        "tournament": t,
+        "rounds": rounds,
+        "stage_title": _TV_STAGES[stage],
+        "cols": 2 if biggest > 1 else 1,
+    })
+
+
 @app.get("/live/tournaments/{tournament_id}/tv/qualifiers", response_class=HTMLResponse)
 def live_tournament_tv_qualifiers(request: Request, tournament_id: str):
     """Full-screen TV board of the Top-N qualifiers (read-only, auto-refreshing)."""
