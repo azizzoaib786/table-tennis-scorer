@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8"/>
     <meta name="viewport" content="width=device-width, initial-scale=1"/>
-    <meta http-equiv="refresh" content="10; url=/live"/>
+    <meta http-equiv="refresh" content="2; url=/live"/>
     <script src="https://cdn.tailwindcss.com"></script>
     <title>Live — Table Tennis Scorer</title>
     <link rel="manifest" href="/static/manifest.json" />
@@ -24,7 +24,7 @@
             {{ tournaments_view|length }} tournament{{ 's' if tournaments_view|length != 1 else '' }}
             {% if standalone_live %} · {{ standalone_live|length }} ad-hoc match{{ 'es' if standalone_live|length != 1 else '' }}{% endif %}
           </p>
-          <p class="text-xs text-emerald-600 mt-1">🔄 Auto-refresh every 10s · scores update inline, no clicking needed</p>
+          <p class="text-xs text-emerald-600 mt-1">🔄 Auto-refresh every 2s · scores update inline, no clicking needed</p>
         </div>
       </div>
 

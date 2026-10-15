@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8"/>
     <meta name="viewport" content="width=device-width, initial-scale=1"/>
-    <meta http-equiv="refresh" content="10; url=/live/tournaments/{{ tournament.tournament_id }}"/>
+    <meta http-equiv="refresh" content="2; url=/live/tournaments/{{ tournament.tournament_id }}"/>
     <script src="https://cdn.tailwindcss.com"></script>
     <title>{{ tournament.name }} — Live Board</title>
     <link rel="manifest" href="/static/manifest.json" />
@@ -23,7 +23,7 @@
             {{ (tournament.participants or []) | length }} participants •
             Bo{{ tournament.best_of }} • First to {{ tournament.points_to_win }}
           </p>
-          <p class="text-xs text-emerald-600 mt-1">🔄 Auto-refresh every 10s</p>
+          <p class="text-xs text-emerald-600 mt-1">🔄 Auto-refresh every 2s</p>
         </div>
       </div>
 
