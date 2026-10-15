@@ -3999,6 +3999,19 @@ def update_tournament_config(request: Request, tournament_id: str,
     return RedirectResponse(f"/tournaments/{tournament_id}", status_code=303)
 
 
+@app.get("/live/tournaments/{tournament_id}/tv/qualifiers", response_class=HTMLResponse)
+def live_tournament_tv_qualifiers(request: Request, tournament_id: str):
+    """Full-screen TV board of the Top-N qualifiers (read-only, auto-refreshing)."""
+    t = get_tournament(tournament_id)
+    if not t:
+        raise HTTPException(404, "Tournament not found")
+    return templates.TemplateResponse("tv_qualifiers.html", {
+        "request": request,
+        "tournament": t,
+        "sd": _seeding(t),
+    })
+
+
 @app.get("/live/tournaments/{tournament_id}/tv", response_class=HTMLResponse)
 def live_tournament_tv(request: Request, tournament_id: str):
     """Full-screen, no-click TV board: one tile per table, auto-refreshing."""
