@@ -435,7 +435,7 @@
               {% endif %}
               {% set busy_msg = (busy.get(m.table_number|int) if (m.table_number and not m.match_id) else none) %}
               {% if busy_msg %}
-                <span class="text-[10px] px-2 py-0.5 rounded-full border bg-red-100 text-red-700 border-red-300 font-bold animate-pulse">⚠️ Table in use</span>
+                <span class="text-[10px] px-2 py-0.5 rounded-full border bg-red-100 text-red-700 border-red-300 font-bold animate-pulse">🔒 Occupied: {{ busy_msg }}</span>
               {% endif %}
               <div class="font-bold text-emerald-900 truncate">
                 {% if is_doubles %}
@@ -463,10 +463,21 @@
             <a href="/live/{{ m.match_id }}" target="_blank" class="px-3 py-2 rounded-lg bg-emerald-600 text-white text-xs font-bold shadow-md">📺 Live</a>
             {% else %}
             {% if not m.walkover %}
-            <form method="post" action="/tournaments/{{ tournament.tournament_id }}/rounds/{{ r.round_num }}/start/{{ m.slot }}"
-                  {% if busy_msg %}onsubmit='return confirm({{ ("⚠️ Table " ~ m.table_number ~ " already has a match in progress:\n\n" ~ busy_msg ~ "\n\nThe scorer there may still be scoring. Start this match anyway?")|tojson }})'{% endif %}>
+            {% if busy_msg %}
+            <button type="button" disabled title="Table {{ m.table_number }} is occupied by {{ busy_msg }}"
+                    class="px-3 py-2 rounded-lg bg-slate-300 text-slate-600 text-xs font-bold cursor-not-allowed">🔒 Table {{ m.table_number }} occupied</button>
+            {% if user and user.is_admin %}
+            <form hx-post="/tournaments/{{ tournament.tournament_id }}/tables/{{ m.table_number }}/unlock"
+                  hx-target="#tournament-body" hx-swap="innerHTML"
+                  hx-confirm="Unlock table {{ m.table_number }}? It is held by: {{ busy_msg }}. Another match will be able to start there." class="inline">
+              <button class="px-3 py-2 rounded-lg bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold shadow-md">🔓 Unlock</button>
+            </form>
+            {% endif %}
+            {% else %}
+            <form method="post" action="/tournaments/{{ tournament.tournament_id }}/rounds/{{ r.round_num }}/start/{{ m.slot }}">
               <button class="px-3 py-2 rounded-lg bg-gradient-to-r from-emerald-600 to-teal-600 text-white text-xs font-bold shadow-md">▶️ Start</button>
             </form>
+            {% endif %}
             {% endif %}
             {% if user and user.is_admin %}
             <button type="button" onclick="this.closest('.rounded-xl').querySelector('.pair-edit-panel').classList.toggle('hidden')"

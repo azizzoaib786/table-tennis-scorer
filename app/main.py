@@ -489,7 +489,7 @@ def _busy_tables(t: Dict[str, Any]) -> Dict[int, str]:
     busy: Dict[int, str] = {}
     for r in (t.get("rounds") or []):
         for s in (r.get("matches") or []):
-            if not s.get("match_id") or s.get("winner") in ("A", "B"):
+            if not s.get("match_id") or s.get("winner") in ("A", "B") or s.get("table_released"):
                 continue
             try:
                 tn = int(s.get("table_number") or 0)
@@ -3688,6 +3688,32 @@ def set_pair_table(request: Request, tournament_id: str, round_num: int, slot: i
     })
 
 
+@app.post("/tournaments/{tournament_id}/tables/{table_number}/unlock", response_class=HTMLResponse)
+def unlock_table(request: Request, tournament_id: str, table_number: int):
+    """Admin: release a table held by an unfinished match so another match can
+    be started there. The held match keeps its record and table label."""
+    user, t = check_tournament_access(request, tournament_id, admin_only=True)
+    rounds = t.get("rounds", [])
+    freed = 0
+    for r in rounds:
+        for s in r.get("matches", []):
+            try:
+                tn = int(s.get("table_number") or 0)
+            except (TypeError, ValueError):
+                tn = 0
+            if (tn == int(table_number) and s.get("match_id")
+                    and s.get("winner") not in ("A", "B") and not s.get("table_released")):
+                s["table_released"] = True
+                freed += 1
+    if freed:
+        update_tournament(tournament_id, "SET rounds = :r", {":r": rounds})
+    return templates.TemplateResponse("partials/tournament_body.html", {
+        "request": request, "user": user, "tournament": must_tournament(tournament_id),
+        "roster": list_roster(),
+        "flash": f"🔓 Table {table_number} unlocked" if freed else f"Table {table_number} was already free",
+    })
+
+
 @app.post("/tournaments/{tournament_id}/rounds/{round_num}/delete", response_class=HTMLResponse)
 def delete_round(request: Request, tournament_id: str, round_num: int):
     """Admin: delete a whole round/pool, including the live/finished match
@@ -3748,6 +3774,18 @@ def start_pair_match(request: Request, tournament_id: str, round_num: int, slot:
         raise HTTPException(404, "Pair not found")
     if pair.get("match_id"):
         return RedirectResponse(f"/matches/{pair['match_id']}", status_code=303)
+
+    # Table lock: a table with a started, undecided match cannot be taken.
+    try:
+        want_table = int(pair.get("table_number") or 0)
+    except (TypeError, ValueError):
+        want_table = 0
+    if want_table:
+        occupied_by = _busy_tables(t).get(want_table)
+        if occupied_by:
+            raise HTTPException(
+                409, f"Table {want_table} is occupied by {occupied_by}. "
+                     f"It can be used once that match is finished.")
 
     cfg = get_settings()
     match_id = uuid.uuid4().hex
