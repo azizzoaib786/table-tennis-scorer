@@ -282,6 +282,8 @@ def _participant_level(t: Optional[Dict[str, Any]], pid: Optional[str]) -> str:
 
 templates.env.globals["participant_level"] = _participant_level
 templates.env.globals["side_team"] = lambda t, slot, side: _side_label(t, slot, side)[0]
+templates.env.globals["by_time"] = lambda ms: sorted(
+    ms or [], key=lambda x: (x.get("sched_start") or "99:99", int(x.get("slot", 0) or 0)))
 
 
 def _final_popup(match: Dict[str, Any], state: Dict[str, Any]) -> Optional[Dict[str, Any]]:
@@ -3924,6 +3926,8 @@ def _build_rounds_view(t: Dict[str, Any]) -> List[Dict[str, Any]]:
                 "round_num": int(r.get("round_num", 0)),
                 "round_name": r.get("name", ""),
                 "table_number": int(pair.get("table_number") or 0),
+                "sched_start": pair.get("sched_start", ""),
+                "sched_end": pair.get("sched_end", ""),
                 "final_a": None, "final_b": None,
                 "winner": pair.get("winner", ""),
                 "winner_name": pair.get("winner_name", ""),
@@ -3960,6 +3964,7 @@ def _build_rounds_view(t: Dict[str, Any]) -> List[Dict[str, Any]]:
                 row["final_a"] = int(pair.get("a_points") or 0)
                 row["final_b"] = int(pair.get("b_points") or 0)
             matches_view.append(row)
+        matches_view.sort(key=lambda x: (x.get("sched_start") or "99:99", x["slot"]))
         rounds_view.append({
             "round_num": int(r.get("round_num", 0)),
             "name": r.get("name", ""),
