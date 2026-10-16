@@ -1947,7 +1947,9 @@ def add_point(request: Request, match_id: str, ab: str):
     flash = None
     if state2.get("match_winner"):
         winner_nm = player_name(match2, state2["match_winner"])
-        flash = f"🏆 Match Over! {winner_nm} wins!"
+        extras = _match_display_extras(match2)
+        team_nm = extras["team_a"] if state2["match_winner"] == "A" else extras["team_b"]
+        flash = f"🏆 Match Over! {team_nm or winner_nm} wins!"
     elif state2.get("side_change_alert"):
         flash = "🔀 Change ends! (deciding game — swap sides)"
     # Service-change banner is intentionally kept to the highlight only; we do
