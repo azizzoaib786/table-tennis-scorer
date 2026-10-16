@@ -1,0 +1,53 @@
+{# Shared light "poster" theme for the TV boards. Use with <html class="poster">. #}
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; overflow: hidden; }
+  #app { height: 100vh; display: flex; flex-direction: column; padding: 1vmin; gap: 1vmin; }
+  @keyframes pulse { 50% { opacity: .55; } }
+
+  html.poster, html.poster body { background: #eaf3ff; }
+  .poster #app { color: #0f2a55; }
+  .poster .ptitle { text-align: center; color: #123a73; font-weight: 900; letter-spacing: .04em;
+                    font-size: max(16px, 4.2vmin); line-height: 1; text-transform: uppercase; }
+  .poster .ptitle small { display: block; margin-top: .5vmin; color: #475f86; letter-spacing: 0; text-transform: none;
+                          font-size: .36em; font-weight: 700; }
+  .poster .pstatus { display: inline-block; margin-top: .6vmin; padding: .15em .9em; border-radius: 999px; background: #cbd9ee;
+                     color: #334e7a; font-size: .32em; letter-spacing: .04em; font-weight: 800; }
+  .poster .pstatus.final { background: #059669; color: #fff; }
+  .poster #board { flex: 1; min-height: 0; display: grid; gap: 1.2vmin; grid-auto-rows: 1fr;
+                   grid-template-columns: repeat(var(--cols, 2), 1fr); }
+  @media (orientation: portrait) { .poster #board { grid-template-columns: repeat(2, 1fr); } }
+  .poster .pempty { grid-column: 1 / -1; display: flex; align-items: center; justify-content: center; color: #475f86;
+                    font-weight: 800; font-size: max(14px, 3vmin); }
+
+  .pool { background: #fff; border: .3vmin solid #c7dbf5; border-radius: 1.4vmin; overflow: hidden;
+          display: flex; flex-direction: column; min-height: 0; box-shadow: 0 .4vmin 1.2vmin rgba(18,58,115,.12); }
+  .pool > .ph { display: flex; align-items: center; gap: 1vmin; background: linear-gradient(90deg,#123a73,#1d5aa8);
+                color: #fff; font-weight: 900; text-transform: uppercase; letter-spacing: .04em;
+                font-size: max(12px, 2.6vmin); padding: .6vmin 1.2vmin; }
+  .tnum { width: 3.4vmin; height: 3.4vmin; border-radius: 50%; flex-shrink: 0; background: #fff; color: #123a73;
+          display: flex; align-items: center; justify-content: center; font-size: .75em; font-weight: 900; }
+  .pool > .pr { flex: 1; min-height: 0; display: grid; align-items: stretch; gap: .6vmin;
+                grid-template-columns: 8vmin 1fr; padding: .3vmin .8vmin; }
+  .pool > .pr + .pr { border-top: .2vmin solid #e2ecfa; }
+  .ptime { display: flex; align-items: center; justify-content: center; font-weight: 900; color: #123a73;
+           font-size: max(11px, 2.2vmin); font-variant-numeric: tabular-nums; }
+  .fx { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; text-align: center;
+        gap: .2em .5em; padding: .3vmin .8vmin; background: #f1f7ff; border-radius: .8vmin; border: .2vmin solid transparent;
+        font-weight: 800; color: #0f2a55; font-size: max(10px, 1.75vmin); line-height: 1.15; }
+  .fx.lg { font-size: max(14px, 3.2vmin); }
+  .fx .vs { color: #64748b; font-weight: 700; font-size: .85em; }
+  .fx .tb { font-size: .75em; color: #fff; background: var(--pc, #1d5aa8); border-radius: .6em; padding: 0 .5em; font-weight: 800;
+            text-transform: uppercase; }
+  .fx.live { background: #fee2e2; border-color: #ef4444; }
+  .fx.done { background: #ecfdf5; }
+  .fx .w { color: #047857; }
+  .fx .l { color: #94a3b8; }
+  .fx .tbd { color: #94a3b8; }
+  .fx .pill { background: #ef4444; color: #fff; border-radius: 999px; padding: 0 .6em; font-size: .8em; animation: pulse 1.4s infinite; }
+  .fx .pill.deuce { background: #f59e0b; color: #111; animation: none; }
+  .fx .res { color: #047857; font-size: .8em; font-weight: 900; }
+  .fx .gs { color: #64748b; font-size: .7em; font-weight: 700; }
+  .poster footer { text-align: center; color: #475f86; font-size: max(10px, 1.6vmin); font-weight: 600; }
+  .poster footer a { color: #123a73; text-decoration: none; }
+</style>

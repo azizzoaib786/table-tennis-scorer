@@ -1,5 +1,5 @@
 <!doctype html>
-<html>
+<html class="{{ 'poster' if pools else '' }}">
   <head>
     <meta charset="utf-8"/>
     <meta name="viewport" content="width=device-width, initial-scale=1"/>
@@ -10,9 +10,9 @@
                    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; overflow: hidden; }
       #app { height: 100vh; display: flex; flex-direction: column; padding: 1vmin; gap: 1vmin; }
       header { display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; padding: 0 1vmin;
-               font-size: clamp(14px, 2.4vmin, 32px); font-weight: 800; color: #6ee7b7; }
+               font-size: max(14px, 2.4vmin); font-weight: 800; color: #6ee7b7; }
       header small { font-weight: 600; color: #94a3b8; font-size: .65em; }
-      footer { text-align: center; color: #94a3b8; font-size: clamp(10px, 1.6vmin, 20px); font-weight: 600; }
+      footer { text-align: center; color: #94a3b8; font-size: max(10px, 1.6vmin); font-weight: 600; }
       footer a { color: #6ee7b7; text-decoration: none; }
       #board { flex: 1; min-height: 0; display: grid; gap: 1vmin;
                grid-template-columns: repeat({{ 3 if table_board|length > 4 else 2 }}, 1fr);
@@ -22,61 +22,27 @@
               display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
       .tile.live { border-color: #38bdf8; background: #082f49; }
       .head { display: flex; justify-content: space-between; align-items: center; font-weight: 900;
-              font-size: clamp(14px, 3vmin, 42px); }
+              font-size: max(14px, 3vmin); }
       .badge { font-size: .55em; padding: .15em .6em; border-radius: 999px; background: #334155; color: #cbd5e1; font-weight: 800; }
       .live .badge { background: #ef4444; color: #fff; animation: pulse 1.4s infinite; }
       .deuce { background: #f59e0b !important; color: #111 !important; animation: none !important; }
       @keyframes pulse { 50% { opacity: .55; } }
-      .round { font-size: clamp(10px, 1.7vmin, 24px); color: #7dd3fc; font-weight: 700; text-transform: uppercase; margin-top: .3vmin; }
+      .round { font-size: max(10px, 1.7vmin); color: #7dd3fc; font-weight: 700; text-transform: uppercase; margin-top: .3vmin; }
       .side { display: flex; justify-content: space-between; align-items: center; gap: 1vmin; flex: 1; min-height: 0; }
       .side + .side { border-top: .2vmin solid #1e3a5f; }
-      .name { font-size: clamp(14px, 3.2vmin, 46px); font-weight: 800; line-height: 1.1; overflow: hidden;
+      .name { font-size: max(14px, 3.2vmin); font-weight: 800; line-height: 1.1; overflow: hidden;
               display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
-      .score { font-size: clamp(36px, 10vmin, 150px); font-weight: 900; font-variant-numeric: tabular-nums; line-height: 1; color: #fff; }
-      .games { text-align: right; font-size: clamp(11px, 2vmin, 28px); color: #7dd3fc; font-weight: 800; }
-      .muted { color: #94a3b8; font-size: clamp(11px, 2vmin, 28px); font-weight: 600; line-height: 1.3; }
+      .score { font-size: max(36px, 10vmin); font-weight: 900; font-variant-numeric: tabular-nums; line-height: 1; color: #fff; }
+      .games { text-align: right; font-size: max(11px, 2vmin); color: #7dd3fc; font-weight: 800; }
+      .muted { color: #94a3b8; font-size: max(11px, 2vmin); font-weight: 600; line-height: 1.3; }
       .next b { color: #e2e8f0; }
       .free { flex: 1; display: flex; flex-direction: column; justify-content: center; gap: .6vmin; }
-      .last { color: #fbbf24; font-size: clamp(10px, 1.7vmin, 24px); font-weight: 700; margin-top: .5vmin;
+      .last { color: #fbbf24; font-size: max(10px, 1.7vmin); font-weight: 700; margin-top: .5vmin;
               white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-
-      /* Poster-style league schedule (light theme) */
-      html:has(body.poster), body.poster { background: #eaf3ff; }
-      .poster #app { color: #0f2a55; }
-      .poster .ptitle { text-align: center; color: #123a73; font-weight: 900; letter-spacing: .04em;
-                        font-size: clamp(16px, 4.2vmin, 56px); line-height: 1; text-transform: uppercase; }
-      .poster .ptitle small { display: block; margin-top: .5vmin; color: #475f86; letter-spacing: 0; text-transform: none;
-                              font-size: .36em; font-weight: 700; }
-      .poster #board { grid-template-columns: repeat(2, 1fr); grid-auto-rows: 1fr; gap: 1.2vmin; }
-      .pool { background: #fff; border: .3vmin solid #c7dbf5; border-radius: 1.4vmin; overflow: hidden;
-              display: flex; flex-direction: column; min-height: 0; box-shadow: 0 .4vmin 1.2vmin rgba(18,58,115,.12); }
-      .pool > .ph { display: flex; align-items: center; gap: 1vmin; background: linear-gradient(90deg,#123a73,#1d5aa8);
-                    color: #fff; font-weight: 900; text-transform: uppercase; letter-spacing: .04em;
-                    font-size: clamp(12px, 2.6vmin, 34px); padding: .6vmin 1.2vmin; }
-      .planet { width: 3.4vmin; height: 3.4vmin; border-radius: 50%; flex-shrink: 0;
-                background: radial-gradient(circle at 30% 30%, rgba(255,255,255,.55), transparent 45%), var(--pc, #64748b); }
-      .pool > .pr { flex: 1; min-height: 0; display: grid; align-items: stretch; gap: .6vmin;
-                    grid-template-columns: 9vmin repeat(var(--n), 1fr); padding: .4vmin .8vmin; }
-      .pool > .pr + .pr { border-top: .2vmin solid #e2ecfa; }
-      .ptime { display: flex; align-items: center; justify-content: center; font-weight: 900; color: #123a73;
-               font-size: clamp(11px, 2.2vmin, 30px); font-variant-numeric: tabular-nums; }
-      .fx { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; text-align: center;
-            gap: .2em .5em; padding: .3vmin .8vmin; background: #f1f7ff; border-radius: .8vmin; border: .2vmin solid transparent;
-            font-weight: 800; color: #0f2a55; font-size: clamp(10px, 1.75vmin, 24px); line-height: 1.15; }
-      .fx .vs { color: #64748b; font-weight: 700; font-size: .85em; }
-      .fx .tb { font-size: .75em; color: #fff; background: #1d5aa8; border-radius: .6em; padding: 0 .5em; font-weight: 800; }
-      .fx.live { background: #fee2e2; border-color: #ef4444; }
-      .fx.done { background: #ecfdf5; }
-      .fx .w { color: #047857; }
-      .fx .l { color: #94a3b8; }
-      .fx .pill { background: #ef4444; color: #fff; border-radius: 999px; padding: 0 .6em; font-size: .8em; animation: pulse 1.4s infinite; }
-      .fx .pill.deuce { background: #f59e0b; color: #111; animation: none; }
-      .fx .res { color: #047857; font-size: .8em; font-weight: 900; }
-      .poster footer { color: #475f86; }
-      .poster footer a { color: #123a73; }
     </style>
+    {% include "partials/tv_poster_css.html" %}
   </head>
-  <body class="{{ 'poster' if pools else '' }}">
+  <body>
     {% set planet_colors = {'mercury': '#8d8d8d', 'venus': '#e8a33d', 'earth': '#2f7fd1', 'mars': '#d63a2f',
                             'jupiter': '#c9822f', 'saturn': '#d9b56a', 'pluto': '#7c4dbd', 'neptune': '#1fa39a',
                             'uranus': '#5cc7d6'} %}
@@ -89,23 +55,21 @@
       <div class="ptitle">League Match Schedule
         <small>{{ tournament.name }} • Best of {{ tournament.best_of }} games • First to {{ tournament.points_to_win }} points</small>
       </div>
-      <div id="board">
+      <div id="board" style="--cols: {{ 3 if pools|length > 4 else 2 }}">
         {% for p in pools %}
         <div class="pool">
-          <div class="ph"><span class="planet" style="--pc: {{ planet_colors.get(p.key, '#64748b') }}"></span>{{ p.label }}</div>
-          {% for row in p.rows %}
-          <div class="pr" style="--n: {{ p.cols }}">
-            <div class="ptime">{{ row.time if row.time else '-' }}</div>
-            {% for m in row.matches %}
+          <div class="ph"><span class="tnum">{{ p.table or '-' }}</span>{{ p.label }}</div>
+          {% for m in p.matches %}
+          <div class="pr">
+            <div class="ptime">{{ m.sched_start if m.sched_start else '-' }}</div>
             <div class="fx {{ 'live' if m.status == 'live' else ('done' if m.status == 'finished' else '') }}">
-              {% if m.table_number %}<span class="tb">T{{ m.table_number }}</span>{% endif %}
+              <span class="tb" style="--pc: {{ planet_colors.get(m.pool_key, '#1d5aa8') }}">{{ m.pool_label }}</span>
               <span class="{{ 'w' if m.status == 'finished' and m.winner == 'A' else ('l' if m.status == 'finished' and m.winner == 'B' else '') }}">{{ names(m, 'a') }}</span>
               <span class="vs">vs</span>
               <span class="{{ 'w' if m.status == 'finished' and m.winner == 'B' else ('l' if m.status == 'finished' and m.winner == 'A' else '') }}">{{ names(m, 'b') }}</span>
               {% if m.status == 'live' %}<span class="pill {{ 'deuce' if m.is_deuce else '' }}">{{ 'DEUCE' if m.is_deuce else 'LIVE' }} G{{ m.current_game_num }} {{ m.a_score }}-{{ m.b_score }} ({{ m.a_games }}-{{ m.b_games }})</span>
               {% elif m.status == 'finished' %}<span class="res">{{ m.a_games }}-{{ m.b_games }}</span>{% endif %}
             </div>
-            {% endfor %}
           </div>
           {% endfor %}
         </div>

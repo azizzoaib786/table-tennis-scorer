@@ -535,27 +535,34 @@ def _build_table_board(t: Dict[str, Any], rounds_view: List[Dict[str, Any]]) -> 
     return [tables[k] for k in sorted(tables)]
 
 
+def _table_cards(matches: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Group matches into one card per table, ordered by start time."""
+    by_table: Dict[int, List[Dict[str, Any]]] = {}
+    for m in matches:
+        try:
+            tn = int(m.get("table_number") or 0)
+        except (TypeError, ValueError):
+            tn = 0
+        by_table.setdefault(tn, []).append(m)
+    cards: List[Dict[str, Any]] = []
+    for tn in sorted(by_table, key=lambda k: (k == 0, k)):
+        ms = sorted(by_table[tn], key=lambda x: (x.get("sched_start") or "99:99", x.get("slot", 0)))
+        cards.append({"table": tn, "label": f"Table {tn}" if tn else "No table", "matches": ms})
+    return cards
+
+
 def _build_pool_schedule(rounds_view: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    """Poster-style schedule for the TV board: one card per pool, matches grouped by
-    start time (one row per time slot, one cell per table playing at that time)."""
-    pools: List[Dict[str, Any]] = []
+    """Poster-style schedule for the TV board: one card per table, pool-stage matches
+    in start-time order (each row tagged with its pool)."""
+    tagged: List[Dict[str, Any]] = []
     for r in rounds_view:
         if r.get("stage_type") != "pool":
             continue
-        by_time: Dict[str, List[Dict[str, Any]]] = {}
-        for m in r.get("matches", []):
-            by_time.setdefault(m.get("sched_start") or "", []).append(m)
-        rows = [{"time": k, "matches": sorted(v, key=lambda x: (x.get("table_number") or 0, x["slot"]))}
-                for k, v in sorted(by_time.items(), key=lambda kv: kv[0] or "99:99")]
         name = (r.get("name") or "").strip()
-        pools.append({
-            "name": name,
-            "key": re.sub(r"^pool\s+", "", name, flags=re.I).strip().lower(),
-            "label": name if name.lower().startswith("pool") else f"Pool {name}",
-            "rows": rows,
-            "cols": max((len(x["matches"]) for x in rows), default=1),
-        })
-    return pools
+        key = re.sub(r"^pool\s+", "", name, flags=re.I).strip()
+        for m in r.get("matches", []):
+            tagged.append({**m, "pool_label": key, "pool_key": key.lower()})
+    return _table_cards(tagged)
 
 
 def _busy_tables(t: Dict[str, Any]) -> Dict[int, str]:
@@ -4588,9 +4595,8 @@ def live_tournament_tv_stage(request: Request, tournament_id: str, stage: str):
     biggest = max((len(r["matches"]) for r in rounds), default=1)
     if stage in ("top16", "top8"):
         rows = [m for r in rounds for m in r["matches"]]
-        rows.sort(key=lambda x: (x.get("sched_start") or "99:99", int(x.get("slot", 0) or 0)))
         return templates.TemplateResponse("tv_schedule.html", {
-            "request": request, "tournament": t, "rows": rows, "stage_title": _TV_STAGES[stage],
+            "request": request, "tournament": t, "cards": _table_cards(rows), "stage_title": _TV_STAGES[stage],
         })
     return templates.TemplateResponse("tv_stage.html", {
         "request": request,

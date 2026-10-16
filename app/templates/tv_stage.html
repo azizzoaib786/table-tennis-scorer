@@ -1,94 +1,43 @@
 <!doctype html>
-<html>
+<html class="poster">
   <head>
     <meta charset="utf-8"/>
     <meta name="viewport" content="width=device-width, initial-scale=1"/>
     <title>{{ tournament.name }} — {{ stage_title }}</title>
-    <style>
-      * { box-sizing: border-box; margin: 0; padding: 0; }
-      html, body { height: 100%; background: #020617; color: #f1f5f9;
-                   font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; overflow: hidden; }
-      #app { height: 100vh; display: flex; flex-direction: column; padding: 1.2vmin; gap: 1vmin; }
-      header { display: flex; flex-direction: column; align-items: center; text-align: center;
-               font-size: clamp(16px, 3vmin, 40px); font-weight: 800; color: #6ee7b7; }
-      header small { font-weight: 600; color: #94a3b8; font-size: .55em; }
-      #board { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 1vmin; }
-      .section { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: .6vmin; }
-      .stitle { color: #7dd3fc; font-weight: 800; text-transform: uppercase; font-size: clamp(11px, 2vmin, 26px); text-align: center; }
-      .grid { flex: 1; min-height: 0; display: grid; gap: 1vmin; grid-auto-rows: 1fr;
-              grid-template-columns: repeat({{ cols }}, 1fr); }
-      @media (orientation: portrait) { .grid { grid-template-columns: 1fr; } }
-      .tile { background: #0f172a; border: .4vmin solid #334155; border-radius: 1.6vmin; padding: 1vmin 1.6vmin;
-              display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
-      .tile.live { border-color: #38bdf8; background: #082f49; }
-      .tile.done { border-color: #059669; }
-      .head { display: flex; justify-content: space-between; align-items: center; font-weight: 800;
-              font-size: clamp(11px, 2vmin, 28px); color: #94a3b8; }
-      .badge { font-size: .8em; padding: .15em .7em; border-radius: 999px; background: #334155; color: #cbd5e1; font-weight: 800; }
-      .live .badge { background: #ef4444; color: #fff; animation: pulse 1.4s infinite; }
-      .done .badge { background: #059669; color: #fff; }
-      .deuce { background: #f59e0b !important; color: #111 !important; animation: none !important; }
-      @keyframes pulse { 50% { opacity: .55; } }
-      .side { display: flex; justify-content: space-between; align-items: center; gap: 1vmin; flex: 1; min-height: 0; }
-      .side + .side { border-top: .2vmin solid #1e3a5f; }
-      .name { font-size: clamp(14px, 3.2vmin, 46px); font-weight: 800; line-height: 1.1; overflow: hidden;
-              display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
-      .name.tbd { color: #64748b; }
-      .side.win .name { color: #34d399; }
-      .side.lose .name { color: #94a3b8; }
-      .right { display: flex; align-items: center; gap: 1.2vmin; }
-      .games { font-size: clamp(14px, 3vmin, 44px); font-weight: 900; color: #7dd3fc; }
-      .score { font-size: clamp(30px, 8vmin, 120px); font-weight: 900; font-variant-numeric: tabular-nums; line-height: 1; color: #fff; min-width: 1.4em; text-align: right; }
-      .muted { color: #94a3b8; font-size: clamp(10px, 1.8vmin, 26px); font-weight: 600; }
-      .empty { flex: 1; display: flex; align-items: center; justify-content: center; color: #64748b; font-weight: 700;
-               font-size: clamp(14px, 3vmin, 40px); }
-      footer { text-align: center; color: #94a3b8; font-size: clamp(10px, 1.6vmin, 20px); font-weight: 600; }
-      footer a { color: #6ee7b7; text-decoration: none; }
-    </style>
+    {% include "partials/tv_poster_css.html" %}
   </head>
   <body>
     {% macro nm(m, s) -%}
-      {%- if not m['%s_id' % s] -%}TBD
+      {%- if not m['%s_id' % s] -%}<span class="tbd">TBD</span>
       {%- elif m.match_type == 'doubles' -%}{{ side_team(tournament, m, s) }}
       {%- else -%}{{ m['%s_name' % s] }}{%- endif -%}
     {%- endmacro %}
     <div id="app">
       {% include "partials/tv_logos.html" %}
-      <header>
-        <span>🏆 {{ tournament.name }} — {{ stage_title }}</span>
-        <small>Best of {{ tournament.best_of }} games • First to {{ tournament.points_to_win }} points</small>
-      </header>
-      <div id="board">
+      <div class="ptitle">{{ stage_title }}
+        <small>{{ tournament.name }} • Best of {{ tournament.best_of }} games • First to {{ tournament.points_to_win }} points</small>
+      </div>
+      <div id="board" style="--cols: {{ cols }}">
         {% for r in rounds %}
-        <div class="section">
-          {% if rounds|length > 1 %}<div class="stitle">{{ r.name }}</div>{% endif %}
-          <div class="grid">
-            {% for m in r.matches %}
-            <div class="tile {{ 'live' if m.status == 'live' else ('done' if m.status == 'finished' else '') }}">
-              <div class="head">
-                <span>{% if m.table_number %}Table {{ m.table_number }}{% endif %}{% if m.sched_start %}{{ ' • ' if m.table_number }}{{ m.sched_start|t12 }}{% endif %}</span>
-                {% if m.status == 'live' %}<span class="badge {{ 'deuce' if m.is_deuce else '' }}">{{ 'DEUCE' if m.is_deuce else 'LIVE' }} • Game {{ m.current_game_num }}</span>
-                {% elif m.status == 'finished' %}<span class="badge">FINAL</span>
-                {% else %}<span class="badge">UPCOMING</span>{% endif %}
-              </div>
-              {% for s in ['a', 'b'] %}
-              <div class="side {{ 'win' if m.winner and m.winner|lower == s else ('lose' if m.winner else '') }}">
-                <div class="name {{ 'tbd' if not m[s ~ '_id'] else '' }}">{{ nm(m, s) }}</div>
-                <div class="right">
-                  {% if m.status != 'pending' %}<div class="games">{{ m[s ~ '_games'] }}</div>{% endif %}
-                  {% if m.status == 'live' %}<div class="score">{{ m[s ~ '_score'] }}</div>{% endif %}
-                </div>
-              </div>
-              {% endfor %}
-              {% if m.status == 'finished' and m.game_scores %}
-              <div class="muted">{% for g in m.game_scores %}{{ g[0] }}-{{ g[1] }}{{ ', ' if not loop.last }}{% endfor %}</div>
-              {% endif %}
+        <div class="pool">
+          <div class="ph">{{ r.name }}</div>
+          {% for m in r.matches %}
+          <div class="pr">
+            <div class="ptime">{{ m.sched_start if m.sched_start else '-' }}</div>
+            <div class="fx lg {{ 'live' if m.status == 'live' else ('done' if m.status == 'finished' else '') }}">
+              {% if m.table_number %}<span class="tb">T{{ m.table_number }}</span>{% endif %}
+              <span class="{{ 'w' if m.winner and m.winner|lower == 'a' else ('l' if m.winner else '') }}">{{ nm(m, 'a') }}</span>
+              <span class="vs">vs</span>
+              <span class="{{ 'w' if m.winner and m.winner|lower == 'b' else ('l' if m.winner else '') }}">{{ nm(m, 'b') }}</span>
+              {% if m.status == 'live' %}<span class="pill {{ 'deuce' if m.is_deuce else '' }}">{{ 'DEUCE' if m.is_deuce else 'LIVE' }} G{{ m.current_game_num }} {{ m.a_score }}-{{ m.b_score }} ({{ m.a_games }}-{{ m.b_games }})</span>
+              {% elif m.status == 'finished' %}<span class="res">{{ m.a_games }}-{{ m.b_games }}</span>
+                {% if m.game_scores %}<span class="gs">{% for g in m.game_scores %}{{ g[0] }}-{{ g[1] }}{{ ', ' if not loop.last }}{% endfor %}</span>{% endif %}{% endif %}
             </div>
-            {% endfor %}
           </div>
+          {% endfor %}
         </div>
         {% else %}
-        <div class="empty">{{ stage_title }} not drawn yet</div>
+        <div class="pempty">{{ stage_title }} not drawn yet</div>
         {% endfor %}
       </div>
       <footer>🏓 Table Tennis Scorer • Created with ❤️ by FCC, developed by <a href="https://azizzoaib.com" target="_blank" rel="noopener">Aziz Zoaib</a></footer>

@@ -1,59 +1,47 @@
 <!doctype html>
-<html>
+<html class="poster">
   <head>
     <meta charset="utf-8"/>
     <meta name="viewport" content="width=device-width, initial-scale=1"/>
     <title>{{ tournament.name }} — Top Qualifiers</title>
+    {% include "partials/tv_poster_css.html" %}
     <style>
-      * { box-sizing: border-box; margin: 0; padding: 0; }
-      html, body { height: 100%; background: #020617; color: #f1f5f9;
-                   font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; overflow: hidden; }
-      #app { height: 100vh; display: flex; flex-direction: column; padding: 1.2vmin; gap: 1vmin; }
-      header { display: flex; flex-direction: column; align-items: center; text-align: center;
-               font-size: clamp(16px, 3vmin, 40px); font-weight: 800; color: #6ee7b7; }
-      header small { font-weight: 600; color: #94a3b8; font-size: .55em; }
-      .status { display: inline-block; margin-top: .4vmin; padding: .1em .8em; border-radius: 999px; font-size: .5em;
-                background: #334155; color: #cbd5e1; font-weight: 800; }
-      .status.final { background: #059669; color: #fff; }
-      #board { flex: 1; min-height: 0; display: grid; gap: 1.2vmin; grid-template-columns: 1fr 1fr; }
-      @media (orientation: portrait) { #board { grid-template-columns: 1fr; } }
-      .col { display: grid; gap: .7vmin; grid-auto-rows: 1fr; min-height: 0; }
-      .row { display: grid; grid-template-columns: 6vmin 1fr auto auto; align-items: center; gap: 1.2vmin;
-             background: #0f172a; border: .3vmin solid #334155; border-radius: 1.2vmin; padding: 0 1.6vmin; min-height: 0; }
-      .row.top8 { border-color: #fbbf24; background: #1c1917; }
-      .seed { font-size: clamp(16px, 3.4vmin, 48px); font-weight: 900; color: #fbbf24; text-align: center; }
-      .team { font-size: clamp(14px, 3vmin, 42px); font-weight: 800; line-height: 1.1; overflow: hidden;
-              white-space: nowrap; text-overflow: ellipsis; }
-      .pool { display: block; font-size: .5em; color: #7dd3fc; font-weight: 700; text-transform: uppercase; }
-      .stat { text-align: right; font-size: clamp(11px, 2.2vmin, 30px); font-weight: 700; color: #cbd5e1; font-variant-numeric: tabular-nums; }
-      .stat b { display: block; font-size: 1.4em; color: #fff; }
-      .nrr.pos { color: #34d399; } .nrr.neg { color: #f87171; }
-      .tie { font-size: .5em; background: #f59e0b; color: #111; border-radius: .4em; padding: 0 .4em; margin-left: .4em; vertical-align: middle; }
-      footer { text-align: center; color: #94a3b8; font-size: clamp(10px, 1.6vmin, 20px); font-weight: 600; }
-      footer a { color: #6ee7b7; text-decoration: none; }
+      .qr { flex: 1; min-height: 0; display: grid; grid-template-columns: 7vmin 1fr auto auto; align-items: center; gap: 1.2vmin;
+            padding: .3vmin 1.2vmin; font-weight: 800; color: #0f2a55; }
+      .qr + .qr { border-top: .2vmin solid #e2ecfa; }
+      .qr.top8 { background: #fff7e0; }
+      .qseed { text-align: center; font-size: max(14px, 3vmin); font-weight: 900; color: #b45309; }
+      .qteam { font-size: max(12px, 2.6vmin); line-height: 1.1; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+      .qpool { display: block; font-size: .55em; color: #1d5aa8; font-weight: 800; text-transform: uppercase; }
+      .qstat { text-align: right; font-size: max(10px, 1.8vmin); font-weight: 700; color: #475f86; font-variant-numeric: tabular-nums; }
+      .qstat b { display: block; font-size: 1.5em; color: #0f2a55; }
+      .qstat b.pos { color: #047857; } .qstat b.neg { color: #dc2626; }
+      .qtie { font-size: .55em; background: #f59e0b; color: #111; border-radius: .4em; padding: 0 .4em; margin-left: .4em; vertical-align: middle; }
     </style>
   </head>
   <body>
     <div id="app">
       {% include "partials/tv_logos.html" %}
-      <header>
-        <span>🏅 {{ tournament.name }} — Top {{ sd.seeds|length }} Qualifiers</span>
-        <small>Ranked by wins, then NRR (net rally-point difference)</small>
-        <span class="status {{ 'final' if sd.ready else '' }}">{{ 'FINAL' if sd.ready else 'PROVISIONAL – POOLS IN PROGRESS' }}</span>
-      </header>
-      <div id="board">
+      <div class="ptitle"><span id="qtitle">Top {{ sd.seeds|length }} Qualifiers</span>
+        <small>{{ tournament.name }} • Ranked by wins, then NRR (net rally-point difference)</small>
+        <span class="pstatus {{ 'final' if sd.ready else '' }}">{{ 'FINAL' if sd.ready else 'PROVISIONAL – POOLS IN PROGRESS' }}</span>
+      </div>
+      <div id="board" style="--cols: 2">
         {% set half = ((sd.seeds|length) + 1) // 2 %}
         {% for chunk in [sd.seeds[:half], sd.seeds[half:]] %}
-        <div class="col">
+        {% if chunk %}
+        <div class="pool">
+          <div class="ph">Seeds {{ chunk[0].seed }} – {{ chunk[-1].seed }}</div>
           {% for r in chunk %}
-          <div class="row {{ 'top8' if r.seed <= 8 else '' }}">
-            <div class="seed">{{ r.seed }}</div>
-            <div class="team">{{ r.label }}{% if r.tied %}<span class="tie">TIE</span>{% endif %}<span class="pool">{{ r.pool }}</span></div>
-            <div class="stat"><b>{{ r.wins }}</b>W</div>
-            <div class="stat"><b class="nrr {{ 'pos' if r.nrr > 0 else ('neg' if r.nrr < 0 else '') }}">{{ '%+d' % r.nrr }}</b>NRR</div>
+          <div class="qr {{ 'top8' if r.seed <= 8 else '' }}">
+            <div class="qseed">{{ r.seed }}</div>
+            <div class="qteam">{{ r.label }}{% if r.tied %}<span class="qtie">TIE</span>{% endif %}<span class="qpool">{{ r.pool }}</span></div>
+            <div class="qstat"><b>{{ r.wins }}</b>W</div>
+            <div class="qstat"><b class="{{ 'pos' if r.nrr > 0 else ('neg' if r.nrr < 0 else '') }}">{{ '%+d' % r.nrr }}</b>NRR</div>
           </div>
           {% endfor %}
         </div>
+        {% endif %}
         {% endfor %}
       </div>
       <footer>🏓 Table Tennis Scorer • Created with ❤️ by FCC, developed by <a href="https://azizzoaib.com" target="_blank" rel="noopener">Aziz Zoaib</a></footer>
@@ -64,7 +52,7 @@
         try {
           const r = await fetch(location.href, { cache: "no-store" });
           const doc = new DOMParser().parseFromString(await r.text(), "text/html");
-          document.querySelector("header").innerHTML = doc.querySelector("header").innerHTML;
+          document.querySelector(".ptitle").innerHTML = doc.querySelector(".ptitle").innerHTML;
           document.getElementById("board").innerHTML = doc.getElementById("board").innerHTML;
           fails = 0;
         } catch (e) { if (++fails >= 3) location.reload(); }
