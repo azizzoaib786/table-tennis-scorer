@@ -1,19 +1,24 @@
-{# Shared branding strip: AN Sports (organizer) · Tournament logo (event) · FCC (venue partner).
-   Included at the top of every page's outer container. Each <img> falls back
-   to display:none via onerror if the /static asset is missing, so pages stay
-   safe even if an image hasn't been uploaded yet. Height auto-scales from
-   mobile → desktop. #}
+{# Shared branding strip: organizer logo · compact table tennis banner · venue partner.
+   The middle section is intentionally smaller and more subtle so it acts as a
+   compact event badge instead of a large hero image. #}
 <div class="flex items-center justify-between gap-2 mb-3 sm:mb-4">
   <img src="/static/ansports-logo.png"
        alt="AN Sports Dubai"
-       class="h-12 sm:h-16 w-auto drop-shadow"
+       class="h-10 sm:h-12 w-auto drop-shadow"
        onerror="this.style.display='none'"/>
-  <img src="/static/tournament-logo.png"
-       alt="Tournament"
-       class="h-14 sm:h-20 w-auto drop-shadow-lg"
-       onerror="this.style.display='none'"/>
+
+  <div class="inline-flex items-center gap-2 rounded-full border border-sky-200 bg-white/85 px-2.5 py-1.5 shadow-sm backdrop-blur-sm">
+    <div class="flex h-7 w-7 items-center justify-center rounded-full bg-gradient-to-br from-sky-500 to-indigo-500 text-base shadow-sm text-white">
+      🏓
+    </div>
+    <div class="leading-none text-left">
+      <div class="text-[9px] font-bold uppercase tracking-[0.18em] text-sky-600">Tournament</div>
+      <div class="text-sm font-black text-slate-800">Table Tennis</div>
+    </div>
+  </div>
+
   <img src="/static/fcc-logo.png"
        alt="Friends Cricket Club"
-       class="h-12 sm:h-16 w-auto drop-shadow"
+       class="h-10 sm:h-12 w-auto drop-shadow"
        onerror="this.style.display='none'"/>
 </div>
