@@ -37,6 +37,7 @@
       <span class="{{ 'win' if won else ('lose' if lost else '') }}">{% if m['seed_' ~ s] %}<span class="t">T{{ m['seed_' ~ s] }}</span> {% endif %}{{ side_team(tournament, m, s) }}</span>
     {%- endmacro %}
     <div id="app">
+      {% include "partials/tv_logos.html" %}
       <h1>🏆 {{ tournament.name }}<small>{{ stage_title }}</small></h1>
       <div id="board">
         <div class="row head"><div>🕘 START TIME</div><div>🏓 MATCH</div><div>👥 FIXTURE</div></div>

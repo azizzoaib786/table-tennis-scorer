@@ -53,6 +53,7 @@
       {%- else -%}{{ m['%s_name' % s] }}{%- endif -%}
     {%- endmacro %}
     <div id="app">
+      {% include "partials/tv_logos.html" %}
       <header>
         <span>🏆 {{ tournament.name }} — {{ stage_title }}</span>
         <small>Best of {{ tournament.best_of }} games • First to {{ tournament.points_to_win }} points</small>

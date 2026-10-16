@@ -1,3 +1,4 @@
+import time
 import uuid
 from datetime import datetime, timezone, timedelta
 from typing import Any, Dict, List, Optional, Tuple
@@ -534,6 +535,29 @@ def _build_table_board(t: Dict[str, Any], rounds_view: List[Dict[str, Any]]) -> 
     return [tables[k] for k in sorted(tables)]
 
 
+def _build_pool_schedule(rounds_view: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Poster-style schedule for the TV board: one card per pool, matches grouped by
+    start time (one row per time slot, one cell per table playing at that time)."""
+    pools: List[Dict[str, Any]] = []
+    for r in rounds_view:
+        if r.get("stage_type") != "pool":
+            continue
+        by_time: Dict[str, List[Dict[str, Any]]] = {}
+        for m in r.get("matches", []):
+            by_time.setdefault(m.get("sched_start") or "", []).append(m)
+        rows = [{"time": k, "matches": sorted(v, key=lambda x: (x.get("table_number") or 0, x["slot"]))}
+                for k, v in sorted(by_time.items(), key=lambda kv: kv[0] or "99:99")]
+        name = (r.get("name") or "").strip()
+        pools.append({
+            "name": name,
+            "key": re.sub(r"^pool\s+", "", name, flags=re.I).strip().lower(),
+            "label": name if name.lower().startswith("pool") else f"Pool {name}",
+            "rows": rows,
+            "cols": max((len(x["matches"]) for x in rows), default=1),
+        })
+    return pools
+
+
 def _busy_tables(t: Dict[str, Any]) -> Dict[int, str]:
     """{table_number: 'A / B vs C / D'} for matches that were started but not yet decided."""
     busy: Dict[int, str] = {}
@@ -863,10 +887,40 @@ def _maybe_claim(match: Dict[str, Any], user: Dict[str, Any]) -> Dict[str, Any]:
     return st
 
 
-def match_context(request: Request, match: Dict[str, Any], user: Optional[Dict[str, Any]] = None,
-                  flash: Optional[str] = None) -> Dict[str, Any]:
-    ev = list_events(match["match_id"])
-    state = compute_state(match, ev)
+_DISPLAY_EXTRAS_CACHE: Dict[Tuple[Any, ...], Tuple[float, Dict[str, Any]]] = {}
+_DISPLAY_EXTRAS_TTL = 120.0
+
+
+def _match_display_extras(match: Dict[str, Any]) -> Dict[str, Any]:
+    """Photos and doubles team names for a match. Cached briefly so that
+    per-point htmx responses don't re-query registrations on every tap."""
+    key = (match.get("match_id"), match.get("tournament_id"), match.get("match_type"),
+           match.get("player_a"), match.get("player_b"),
+           match.get("player_a2"), match.get("player_b2"))
+    now = time.time()
+    hit = _DISPLAY_EXTRAS_CACHE.get(key)
+    if hit and now - hit[0] < _DISPLAY_EXTRAS_TTL:
+        return hit[1]
+    extras = _compute_match_display_extras(match)
+    if len(_DISPLAY_EXTRAS_CACHE) > 500:
+        _DISPLAY_EXTRAS_CACHE.clear()
+    _DISPLAY_EXTRAS_CACHE[key] = (now, extras)
+    return extras
+
+
+def scoreboard_response(request: Request, user: Optional[Dict[str, Any]], match: Dict[str, Any],
+                        state: Dict[str, Any], flash: Optional[str] = None):
+    """Render the scoreboard partial with the same context as a full page load."""
+    extras = _match_display_extras(match)
+    return templates.TemplateResponse("partials/scoreboard.html", {
+        "request": request, "user": user, "match": match, "state": state,
+        "flash": flash,
+        "lock": _lock_state(match, user) if user else None,
+        **extras,
+    })
+
+
+def _compute_match_display_extras(match: Dict[str, Any]) -> Dict[str, Any]:
     tid = match.get("tournament_id", "")
     photos: Dict[str, Optional[str]] = {"a": None, "b": None, "a2": None, "b2": None}
     team_a = team_b = ""
@@ -909,18 +963,27 @@ def match_context(request: Request, match: Dict[str, Any], user: Optional[Dict[s
                 else:
                     team_b = team
     return {
-        "request": request,
-        "user": user,
-        "match": match,
-        "state": state,
-        "flash": flash,
         "photo_a": photos["a"],
         "photo_b": photos["b"],
         "photo_a2": photos["a2"],
         "photo_b2": photos["b2"],
         "team_a": team_a,
         "team_b": team_b,
+    }
+
+
+def match_context(request: Request, match: Dict[str, Any], user: Optional[Dict[str, Any]] = None,
+                  flash: Optional[str] = None) -> Dict[str, Any]:
+    ev = list_events(match["match_id"])
+    state = compute_state(match, ev)
+    return {
+        "request": request,
+        "user": user,
+        "match": match,
+        "state": state,
+        "flash": flash,
         "lock": _lock_state(match, user) if user else None,
+        **_match_display_extras(match),
     }
 
 
@@ -1722,11 +1785,7 @@ def match_takeover(request: Request, match_id: str):
     _touch_lock(match_id, user)
     match2 = must_match(match_id)
     state = compute_state(match2, list_events(match_id))
-    return templates.TemplateResponse("partials/scoreboard.html", {
-        "request": request, "user": user, "match": match2, "state": state,
-        "lock": _lock_state(match2, user),
-        "flash": "🔒 You are now the active scorer.",
-    })
+    return scoreboard_response(request, user, match2, state, "🔒 You are now the active scorer.")
 
 
 @app.get("/live", response_class=HTMLResponse)
@@ -1860,11 +1919,7 @@ def add_point(request: Request, match_id: str, ab: str):
     ev = list_events(match_id)
     state = compute_state(match, ev)
     if state.get("match_winner"):
-        return templates.TemplateResponse("partials/scoreboard.html", {
-            "request": request, "user": user, "match": match, "state": state,
-            "lock": _lock_state(match, user),
-            "flash": "🏆 Match is already over."
-        })
+        return scoreboard_response(request, user, match, state, "🏆 Match is already over.")
 
     put_event({
         "match_id": match_id,
@@ -1889,10 +1944,7 @@ def add_point(request: Request, match_id: str, ab: str):
     # Service-change banner is intentionally kept to the highlight only; we do
     # not add a text message so the scorer sees a clean, team-focused board.
 
-    return templates.TemplateResponse("partials/scoreboard.html", {
-        "request": request, "user": user, "match": match2, "state": state2,
-        "lock": _lock_state(match2, user), "flash": flash,
-    })
+    return scoreboard_response(request, user, match2, state2, flash)
 
 
 @app.post("/matches/{match_id}/let", response_class=HTMLResponse)
@@ -1902,11 +1954,7 @@ def add_let(request: Request, match_id: str):
     _touch_lock(match_id, user)
     state = compute_state(match, list_events(match_id))
     if state.get("match_winner"):
-        return templates.TemplateResponse("partials/scoreboard.html", {
-            "request": request, "user": user, "match": match, "state": state,
-            "lock": _lock_state(match, user),
-            "flash": "🏆 Match is already over."
-        })
+        return scoreboard_response(request, user, match, state, "🏆 Match is already over.")
     put_event({
         "match_id": match_id,
         "ts": now_ts(),
@@ -1917,11 +1965,7 @@ def add_let(request: Request, match_id: str):
     })
     match2 = must_match(match_id)
     state2 = compute_state(match2, list_events(match_id))
-    return templates.TemplateResponse("partials/scoreboard.html", {
-        "request": request, "user": user, "match": match2, "state": state2,
-        "lock": _lock_state(match2, user),
-        "flash": "🌐 Let — serve replayed (no point).",
-    })
+    return scoreboard_response(request, user, match2, state2, "🌐 Let — serve replayed (no point).")
 
 
 @app.post("/matches/{match_id}/undo", response_class=HTMLResponse)
@@ -1932,10 +1976,7 @@ def undo_point(request: Request, match_id: str):
     match2 = must_match(match_id)
     state2 = compute_state(match2, list_events(match_id))
     flash = "↩️ Last point undone." if deleted else "⚠️ No points to undo."
-    return templates.TemplateResponse("partials/scoreboard.html", {
-        "request": request, "user": user, "match": match2, "state": state2,
-        "lock": _lock_state(match2, user), "flash": flash,
-    })
+    return scoreboard_response(request, user, match2, state2, flash)
 
 
 @app.post("/matches/{match_id}/game-start-serve", response_class=HTMLResponse)
@@ -1947,10 +1988,8 @@ def set_game_start_serve(request: Request, match_id: str,
     user, match = check_match_access(request, match_id)
     state = compute_state(match, list_events(match_id))
     if not can_edit_match_start_settings(match, state, game_num):
-        return templates.TemplateResponse("partials/scoreboard.html", {
-            "request": request, "user": user, "match": match, "state": state,
-            "flash": "⚠️ Serve selection is locked once the game has started.",
-        })
+        return scoreboard_response(request, user, match, state,
+                                   "⚠️ Serve selection is locked once the game has started.")
 
     start_cfg = normalize_match_start_settings(
         match.get("match_type", "singles"),
@@ -1971,10 +2010,8 @@ def set_game_start_serve(request: Request, match_id: str,
     )
     match2 = must_match(match_id)
     state2 = compute_state(match2, list_events(match_id))
-    return templates.TemplateResponse("partials/scoreboard.html", {
-        "request": request, "user": user, "match": match2, "state": state2,
-        "flash": "✅ Starting serve updated for Game " + str(game_num),
-    })
+    return scoreboard_response(request, user, match2, state2,
+                               "✅ Starting serve updated for Game " + str(game_num))
 
 
 @app.post("/matches/{match_id}/players", response_class=HTMLResponse)
@@ -1987,10 +2024,8 @@ def set_players(request: Request, match_id: str,
     user, match = check_match_access(request, match_id)
     state = compute_state(match, list_events(match_id))
     if state.get("total_points") or state.get("match_winner"):
-        return templates.TemplateResponse("partials/scoreboard.html", {
-            "request": request, "user": user, "match": match, "state": state,
-            "flash": "⚠️ Start settings are frozen once the match has started.",
-        })
+        return scoreboard_response(request, user, match, state,
+                                   "⚠️ Start settings are frozen once the match has started.")
 
     updates = []
     vals: Dict[str, Any] = {}
@@ -2034,10 +2069,7 @@ def set_players(request: Request, match_id: str,
         update_match(match_id, "SET " + ", ".join(updates), vals)
     match2 = must_match(match_id)
     state2 = compute_state(match2, list_events(match_id))
-    return templates.TemplateResponse("partials/scoreboard.html", {
-        "request": request, "user": user, "match": match2, "state": state2,
-        "flash": "✅ Match start settings updated",
-    })
+    return scoreboard_response(request, user, match2, state2, "✅ Match start settings updated")
 
 
 @app.post("/matches/{match_id}/delete")
@@ -4588,10 +4620,12 @@ def live_tournament_tv(request: Request, tournament_id: str):
     t = get_tournament(tournament_id)
     if not t:
         raise HTTPException(404, "Tournament not found")
+    rounds_view = _build_rounds_view(t)
     return templates.TemplateResponse("tv_tournament.html", {
         "request": request,
         "tournament": t,
-        "table_board": _build_table_board(t, _build_rounds_view(t)),
+        "table_board": _build_table_board(t, rounds_view),
+        "pools": _build_pool_schedule(rounds_view),
     })
 
 
