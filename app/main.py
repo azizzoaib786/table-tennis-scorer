@@ -144,6 +144,36 @@ templates.env.filters["duration"] = format_duration
 templates.env.globals["photo_url"] = _presigned_photo_url
 
 
+def normalize_match_start_settings(match_type: str,
+                                 first_server: str = "A",
+                                 first_server_side: int = 1,
+                                 first_receiver_side: int = 1) -> Dict[str, Any]:
+    """Validate the match-start rules before the first point is scored.
+
+    These controls are intentionally fixed once the match is underway; they may
+    only be changed while the match is still at 0-0 with no recorded points.
+    """
+    kind = (match_type or "singles").strip().lower()
+    server = str(first_server or "A").strip().upper()
+    if server not in ("A", "B"):
+        server = "A"
+    start_side = int(first_server_side) if str(first_server_side).strip() else 1
+    recv_side = int(first_receiver_side) if str(first_receiver_side).strip() else 1
+    if kind == "doubles":
+        start_side = 1 if start_side not in (1, 2) else start_side
+        recv_side = 1 if recv_side not in (1, 2) else recv_side
+        return {
+            "first_server": server,
+            "first_server_side": start_side,
+            "first_receiver_side": recv_side,
+        }
+    return {
+        "first_server": server,
+        "first_server_side": 1,
+        "first_receiver_side": 1,
+    }
+
+
 def _advancing_participants(tournament: dict, round_num: int) -> list:
     """Participants eligible to be picked in round `round_num`.
     Round 1 → all participants.
@@ -687,6 +717,27 @@ def must_tournament(tournament_id: str) -> Dict[str, Any]:
     if not t:
         raise HTTPException(status_code=404, detail="Tournament not found")
     return t
+
+
+def _score_rule_defaults_for_round(round_data: dict, cfg: dict) -> dict:
+    """Default match rules by stage:
+    - league / pool / group rounds: hard cap at 15, win by 2 once deuce hits 10-10
+    - knockout rounds: no hard cap; continue until someone leads by 2 after deuce
+
+    Round-specific hard_cap_at values still override this default. A value of 0
+    is treated as 'use the default for this stage'.
+    """
+    stage_type = str(round_data.get("stage_type") or "").lower()
+    round_hard_cap = round_data.get("hard_cap_at")
+    if round_hard_cap not in (None, "", 0):
+        return {
+            "hard_cap_enabled": True,
+            "hard_cap_at": int(round_hard_cap),
+        }
+    if stage_type == "knockout":
+        return {"hard_cap_enabled": False, "hard_cap_at": 0}
+    cap = int(cfg.get("hard_cap_at", 15) or 15)
+    return {"hard_cap_enabled": True, "hard_cap_at": cap}
 
 
 def _tournament_grants_scorer(t: Dict[str, Any], user: Dict[str, Any]) -> bool:
@@ -1577,12 +1628,12 @@ def create_match(request: Request,
         raise HTTPException(400, "points_to_win must be at least 5")
     if service_interval < 1 or deuce_interval < 1:
         raise HTTPException(400, "intervals must be at least 1")
-    if first_server not in ("A", "B"):
-        first_server = "A"
-    if first_server_side not in (1, 2):
-        first_server_side = 1
-    if first_receiver_side not in (1, 2):
-        first_receiver_side = 1
+    start_cfg = normalize_match_start_settings(
+        match_type,
+        first_server,
+        first_server_side,
+        first_receiver_side,
+    )
     if match_type == "doubles":
         if not player_a2.strip() or not player_b2.strip():
             raise HTTPException(400, "Doubles requires two players per side")
@@ -1601,7 +1652,7 @@ def create_match(request: Request,
         "deciding_side_change_at": int(deciding_side_change_at),
         "hard_cap_enabled": hard_cap_enabled,
         "hard_cap_at": hard_cap_at,
-        "first_server": first_server,
+        "first_server": start_cfg["first_server"],
         "created_at": now_ts(),
         "user_id": user["user_id"],
         "stats_recorded": False,
@@ -1609,8 +1660,8 @@ def create_match(request: Request,
     if match_type == "doubles":
         item["player_a2"] = player_a2.strip()
         item["player_b2"] = player_b2.strip()
-        item["first_server_side"] = int(first_server_side)
-        item["first_receiver_side"] = int(first_receiver_side)
+        item["first_server_side"] = int(start_cfg["first_server_side"])
+        item["first_receiver_side"] = int(start_cfg["first_receiver_side"])
     if tournament_id:
         item["tournament_id"] = tournament_id
         item["round_num"] = int(round_num)
@@ -1820,9 +1871,8 @@ def add_point(request: Request, match_id: str, ab: str):
         flash = f"🏆 Match Over! {winner_nm} wins!"
     elif state2.get("side_change_alert"):
         flash = "🔀 Change ends! (deciding game — swap sides)"
-    elif state2.get("service_change"):
-        server_nm = state2.get("server_name") or player_name(match2, state2["server"])
-        flash = f"🔁 Service change — {server_nm} to serve"
+    # Service-change banner is intentionally kept to the highlight only; we do
+    # not add a text message so the scorer sees a clean, team-focused board.
 
     return templates.TemplateResponse("partials/scoreboard.html", {
         "request": request, "user": user, "match": match2, "state": state2,
@@ -1877,8 +1927,17 @@ def undo_point(request: Request, match_id: str):
 def set_players(request: Request, match_id: str,
                 player_a: str = Form(""), player_b: str = Form(""),
                 player_a2: str = Form(""), player_b2: str = Form(""),
-                player_a_id: str = Form(""), player_b_id: str = Form("")):
+                player_a_id: str = Form(""), player_b_id: str = Form(""),
+                first_server: str = Form(""), first_server_side: int = Form(0),
+                first_receiver_side: int = Form(0)):
     user, match = check_match_access(request, match_id)
+    state = compute_state(match, list_events(match_id))
+    if state.get("total_points") or state.get("match_winner"):
+        return templates.TemplateResponse("partials/scoreboard.html", {
+            "request": request, "user": user, "match": match, "state": state,
+            "flash": "⚠️ Start settings are frozen once the match has started.",
+        })
+
     updates = []
     vals: Dict[str, Any] = {}
     if player_a.strip():
@@ -1899,13 +1958,31 @@ def set_players(request: Request, match_id: str,
     if player_b_id:
         updates.append("player_b_id = :pbid")
         vals[":pbid"] = player_b_id
+
+    start_cfg = normalize_match_start_settings(
+        match.get("match_type", "singles"),
+        first_server or match.get("first_server", "A"),
+        first_server_side if int(first_server_side) in (1, 2) else match.get("first_server_side", 1),
+        first_receiver_side if int(first_receiver_side) in (1, 2) else match.get("first_receiver_side", 1),
+    )
+    if first_server.strip():
+        updates.append("first_server = :fs")
+        vals[":fs"] = start_cfg["first_server"]
+    if match.get("match_type") == "doubles":
+        if first_server_side and int(first_server_side) in (1, 2):
+            updates.append("first_server_side = :fss")
+            vals[":fss"] = int(start_cfg["first_server_side"])
+        if first_receiver_side and int(first_receiver_side) in (1, 2):
+            updates.append("first_receiver_side = :frs")
+            vals[":frs"] = int(start_cfg["first_receiver_side"])
+
     if updates:
         update_match(match_id, "SET " + ", ".join(updates), vals)
     match2 = must_match(match_id)
     state2 = compute_state(match2, list_events(match_id))
     return templates.TemplateResponse("partials/scoreboard.html", {
         "request": request, "user": user, "match": match2, "state": state2,
-        "flash": "✅ Players updated",
+        "flash": "✅ Match start settings updated",
     })
 
 
@@ -3990,6 +4067,7 @@ def start_pair_match(request: Request, tournament_id: str, round_num: int, slot:
     else:
         name = f"{t['name']} — {target_round['name']}: {pair['a_name']} vs {pair['b_name']}"
 
+    hard_cap_cfg = _score_rule_defaults_for_round(target_round, cfg)
     item = {
         "match_id": match_id,
         "name": name,
@@ -4003,8 +4081,8 @@ def start_pair_match(request: Request, tournament_id: str, round_num: int, slot:
         "deciding_side_change_at": int(cfg.get("deciding_side_change_at", 5)),
         # Snapshot hard-cap rule onto the tournament match too — mirrors
         # /matches so global settings changes don't retro-alter live matches.
-        "hard_cap_enabled": bool(target_round.get("hard_cap_at")) or bool(cfg.get("hard_cap_enabled", False)),
-        "hard_cap_at": int(target_round.get("hard_cap_at") or cfg.get("hard_cap_at", 15)),
+        "hard_cap_enabled": hard_cap_cfg["hard_cap_enabled"],
+        "hard_cap_at": hard_cap_cfg["hard_cap_at"],
         "shutout_at": int(target_round.get("shutout_at") or 0),
         "first_server": "A",
         "created_at": now_ts(),
@@ -4018,8 +4096,10 @@ def start_pair_match(request: Request, tournament_id: str, round_num: int, slot:
     if match_type == "doubles":
         item["player_a2"] = pair.get("a2_name", "")
         item["player_b2"] = pair.get("b2_name", "")
-        item["first_server_side"] = 1
-        item["first_receiver_side"] = 1
+        start_cfg = normalize_match_start_settings(match_type, "A", 1, 1)
+        item["first_server"] = start_cfg["first_server"]
+        item["first_server_side"] = int(start_cfg["first_server_side"])
+        item["first_receiver_side"] = int(start_cfg["first_receiver_side"])
     put_match(item)
     pair["match_id"] = match_id
     update_tournament(tournament_id, "SET rounds = :r", {":r": t["rounds"]})

@@ -10,6 +10,7 @@ Every rule from the README's "Table tennis rules implemented" section
 is exercised here at least once.
 """
 from app.logic import compute_state, player_name
+from app.main import _score_rule_defaults_for_round, normalize_match_start_settings
 
 
 # ── Fixtures (plain dicts, no fixtures framework needed) ───────────────────────
@@ -126,6 +127,16 @@ def test_singles_first_server_alternates_each_game():
 def test_singles_player_name_helper():
     assert player_name(SINGLES_BASE, "A") == "Alice"
     assert player_name(SINGLES_BASE, "B") == "Bob"
+
+
+def test_match_start_settings_are_normalized_before_start():
+    value = normalize_match_start_settings(
+        "singles",
+        first_server="B",
+        first_server_side=9,
+        first_receiver_side=0,
+    )
+    assert value == {"first_server": "B", "first_server_side": 1, "first_receiver_side": 1}
 
 
 # ── Doubles ───────────────────────────────────────────────────────────────────
@@ -257,6 +268,20 @@ def test_missing_match_type_defaults_to_singles():
     state = compute_state(match, [_pt("A"), _pt("B")])
     assert state["match_type"] == "singles"
     assert state["is_doubles"] is False
+
+
+def test_pool_round_defaults_hard_cap_at_15():
+    cfg = {"hard_cap_enabled": False, "hard_cap_at": 15}
+    result = _score_rule_defaults_for_round({"stage_type": "pool"}, cfg)
+    assert result["hard_cap_enabled"] is True
+    assert result["hard_cap_at"] == 15
+
+
+def test_knockout_round_has_no_hard_cap_by_default():
+    cfg = {"hard_cap_enabled": True, "hard_cap_at": 15}
+    result = _score_rule_defaults_for_round({"stage_type": "knockout"}, cfg)
+    assert result["hard_cap_enabled"] is False
+    assert result["hard_cap_at"] == 0
 
 
 def test_missing_side_config_still_works_for_singles():

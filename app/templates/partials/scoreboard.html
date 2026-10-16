@@ -153,14 +153,11 @@
     <div class="text-xs font-bold uppercase tracking-wider text-slate-500">Next Serve</div>
     <div class="mt-1 text-2xl font-bold text-emerald-900 flex items-center justify-center gap-2">
       <span class="text-3xl">🏓</span>
-      <span>{{ state.server_name or (match.player_a if state.server == 'A' else match.player_b) }}</span>
+      <span>{{ (team_a if state.server == 'A' and team_a else (team_b if state.server == 'B' and team_b else (state.server_name or (match.player_a if state.server == 'A' else match.player_b)))) }}</span>
     </div>
     {% if state.is_doubles and state.receiver_name %}
-      <div class="mt-1 text-sm text-slate-600">↳ receiving: <span class="font-bold text-emerald-800">{{ state.receiver_name }}</span></div>
+      <div class="mt-1 text-sm text-slate-600">↳ receiving: <span class="font-bold text-emerald-800">{{ team_b if state.server == 'A' and team_b else (team_a if state.server == 'B' and team_a else state.receiver_name) }}</span></div>
       <div class="text-[10px] text-fuchsia-600 mt-0.5">Doubles: diagonal serve • partners alternate shots</div>
-    {% endif %}
-    {% if state.service_change %}
-    <div class="mt-1 text-xs font-bold text-sky-700">🔁 Service just changed</div>
     {% endif %}
     {% if state.side_change_alert %}
     <div class="mt-1 text-xs font-bold text-fuchsia-700">🔀 CHANGE ENDS (deciding game)</div>
@@ -179,7 +176,7 @@
         <span class="font-mono {% if g.winner == 'A' %}text-emerald-700 font-bold{% else %}text-slate-600{% endif %}">{{ g.a }}</span>
         <span class="text-slate-400">—</span>
         <span class="font-mono {% if g.winner == 'B' %}text-sky-700 font-bold{% else %}text-slate-600{% endif %}">{{ g.b }}</span>
-        <span class="text-xs px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 font-bold">🏆 {{ match.player_a if g.winner == 'A' else match.player_b }}</span>
+        <span class="text-xs px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 font-bold">🏆 {{ (team_a if g.winner == 'A' else team_b) or (match.player_a if g.winner == 'A' else match.player_b) }}</span>
       </div>
       {% endfor %}
     </div>
@@ -206,6 +203,35 @@
       <div class="grid grid-cols-2 gap-2">
         <input name="player_a2" value="{{ match.get('player_a2', '') }}" placeholder="Partner A2 name" class="rounded-lg border-2 border-slate-200 px-3 py-2 text-sm"/>
         <input name="player_b2" value="{{ match.get('player_b2', '') }}" placeholder="Partner B2 name" class="rounded-lg border-2 border-slate-200 px-3 py-2 text-sm"/>
+      </div>
+      {% endif %}
+      <div class="grid grid-cols-2 gap-2">
+        <div>
+          <label class="block text-[11px] font-bold text-slate-600 uppercase tracking-wide mb-1">Starting serve</label>
+          <select name="first_server" class="w-full rounded-lg border-2 border-slate-200 px-3 py-2 text-sm">
+            <option value="A" {% if match.get('first_server', 'A') == 'A' %}selected{% endif %}>Team A</option>
+            <option value="B" {% if match.get('first_server', 'A') == 'B' %}selected{% endif %}>Team B</option>
+          </select>
+        </div>
+        {% if state.is_doubles %}
+        <div>
+          <label class="block text-[11px] font-bold text-slate-600 uppercase tracking-wide mb-1">Server side</label>
+          <select name="first_server_side" class="w-full rounded-lg border-2 border-slate-200 px-3 py-2 text-sm">
+            <option value="1" {% if match.get('first_server_side', 1) == 1 %}selected{% endif %}>Side 1</option>
+            <option value="2" {% if match.get('first_server_side', 1) == 2 %}selected{% endif %}>Side 2</option>
+          </select>
+        </div>
+        {% endif %}
+      </div>
+      {% if state.is_doubles %}
+      <div class="grid grid-cols-1 gap-2">
+        <div>
+          <label class="block text-[11px] font-bold text-slate-600 uppercase tracking-wide mb-1">First receiver side</label>
+          <select name="first_receiver_side" class="w-full rounded-lg border-2 border-slate-200 px-3 py-2 text-sm">
+            <option value="1" {% if match.get('first_receiver_side', 1) == 1 %}selected{% endif %}>Side 1</option>
+            <option value="2" {% if match.get('first_receiver_side', 1) == 2 %}selected{% endif %}>Side 2</option>
+          </select>
+        </div>
       </div>
       {% endif %}
       <div class="grid grid-cols-2 gap-2">

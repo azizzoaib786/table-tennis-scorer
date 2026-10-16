@@ -304,7 +304,7 @@ DEFAULT_SETTINGS: Dict[str, Any] = {
     "deuce_interval": 1,     # at deuce serve rotates every N points
     "default_match_type": "singles",  # "singles" | "doubles"
     "deciding_side_change_at": 5,     # ends change at N pts in the deciding game (0 disables)
-    "hard_cap_enabled": False,        # if True, first to hard_cap_at wins (overrides win-by-2)
+    "hard_cap_enabled": True,         # default league rule: hard cap applies at 15 in non-knockout matches
     "hard_cap_at": 15,                # score at which hard cap triggers
     "default_num_tables": 6,          # playing tables available (live table board + pool scheduling)
     "default_qualify_per_group": 4,   # top N teams of each pool/group advance to the knockout stage
