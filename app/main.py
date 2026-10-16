@@ -527,10 +527,12 @@ def _build_table_board(t: Dict[str, Any], rounds_view: List[Dict[str, Any]]) -> 
             if m["status"] == "live":
                 entry["live"].append(m)
             elif m["status"] == "finished":
-                entry["last"] = m
+                if not entry["last"] or (m.get("sched_start") or "") >= (entry["last"].get("sched_start") or ""):
+                    entry["last"] = m
             else:
                 entry["next"].append(m)
     for entry in tables.values():
+        entry["next"].sort(key=lambda x: (x.get("sched_start") or "99:99", x.get("slot", 0)))
         entry["next"] = entry["next"][:2]
     return [tables[k] for k in sorted(tables)]
 
@@ -4585,6 +4587,8 @@ def live_tournament_tv_stage(request: Request, tournament_id: str, stage: str):
     """Full-screen TV board for one knockout stage: top8, top4 or finals."""
     if stage == "qualifiers":
         return live_tournament_tv_qualifiers(request, tournament_id)
+    if stage == "schedule":
+        return _render_tv_tournament(request, tournament_id, "schedule")
     if stage not in _TV_STAGES:
         raise HTTPException(404, "Unknown stage")
     t = get_tournament(tournament_id)
@@ -4622,7 +4626,12 @@ def live_tournament_tv_qualifiers(request: Request, tournament_id: str):
 
 @app.get("/live/tournaments/{tournament_id}/tv", response_class=HTMLResponse)
 def live_tournament_tv(request: Request, tournament_id: str):
-    """Full-screen, no-click TV board: one tile per table, auto-refreshing."""
+    """Full-screen, no-click TV board: one tile per table showing the one match on it
+    (or the next up), auto-refreshing. /tv/schedule shows the full table-wise fixture list."""
+    return _render_tv_tournament(request, tournament_id, "tables")
+
+
+def _render_tv_tournament(request: Request, tournament_id: str, view: str):
     t = get_tournament(tournament_id)
     if not t:
         raise HTTPException(404, "Tournament not found")
@@ -4630,6 +4639,7 @@ def live_tournament_tv(request: Request, tournament_id: str):
     return templates.TemplateResponse("tv_tournament.html", {
         "request": request,
         "tournament": t,
+        "view": view,
         "table_board": _build_table_board(t, rounds_view),
         "pools": _build_pool_schedule(rounds_view),
     })
