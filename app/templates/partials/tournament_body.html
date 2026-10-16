@@ -320,6 +320,25 @@
     </details>
     {% endif %}
 
+    {% if user and user.is_admin and tournament.format == 'doubles' and r.stage_type != 'pool' and r.stage_type != 'plate' and seeding(tournament).seeds|length >= 16 and not (r.matches | selectattr('match_id') | list) and not (r.matches | selectattr('winner') | list) %}
+    <details class="mb-3">
+      <summary class="cursor-pointer text-xs font-bold text-amber-800">🏅 Generate Top 16 knockouts (K1-K8: 1v16 ... 8v9)</summary>
+      <form hx-post="/tournaments/{{ tournament.tournament_id }}/rounds/{{ r.round_num }}/generate-top16"
+            hx-target="#tournament-body" hx-swap="innerHTML"
+            hx-confirm="Create K1-K8 from the current qualifier ranking? Existing unstarted matches in this round are replaced."
+            class="mt-2 flex items-end gap-2 flex-wrap">
+        <div><label class="text-[10px] font-bold text-amber-900 block">First start (HH:MM)</label>
+          <input name="start_time" value="11:15" class="w-20 rounded-lg border-2 border-amber-200 px-2 py-1 text-sm"/></div>
+        <div><label class="text-[10px] font-bold text-amber-900 block">Minutes per slot</label>
+          <input name="slot_minutes" type="number" min="1" value="15" class="w-20 rounded-lg border-2 border-amber-200 px-2 py-1 text-sm"/></div>
+        <div><label class="text-[10px] font-bold text-amber-900 block">Matches at once (tables)</label>
+          <input name="per_slot" type="number" min="1" value="4" class="w-20 rounded-lg border-2 border-amber-200 px-2 py-1 text-sm"/></div>
+        <button class="rounded-lg bg-amber-600 hover:bg-amber-700 text-white font-bold px-3 py-1.5 text-sm">Generate</button>
+        <span class="text-[10px] text-amber-700">Uses the Top 16 qualifier list above, including your manual changes. Use Override teams on a match to change a fixture.</span>
+      </form>
+    </details>
+    {% endif %}
+
     {% if user and user.is_admin and r.matches and tournament.format == 'doubles' %}
     <details class="mb-3">
       <summary class="cursor-pointer text-xs font-bold text-fuchsia-800">🔁 Replace a team in this round</summary>
@@ -485,7 +504,7 @@
               {% endif %}
               <div class="font-bold text-emerald-900 truncate basis-full w-full">
                 {% if is_doubles %}
-                  {{ side_team(tournament, m, 'a') }} {{ level_badge(participant_level(tournament, m.a_id)) }} <span class="text-slate-400">vs</span> {{ side_team(tournament, m, 'b') }} {{ level_badge(participant_level(tournament, m.b_id)) }}
+                  {% if m.match_label %}<span class="text-indigo-700">{{ m.match_label }}</span> &middot; {% endif %}{% if m.seed_a %}<span class="text-xs text-indigo-600">T{{ m.seed_a }}</span> {% endif %}{{ side_team(tournament, m, 'a') }} {{ level_badge(participant_level(tournament, m.a_id)) }} <span class="text-slate-400">vs</span> {% if m.seed_b %}<span class="text-xs text-indigo-600">T{{ m.seed_b }}</span> {% endif %}{{ side_team(tournament, m, 'b') }} {{ level_badge(participant_level(tournament, m.b_id)) }}
                   <span class="block text-[11px] font-normal text-slate-500 truncate">{{ m.a_name }} / {{ m.a2_name }} &nbsp;vs&nbsp; {{ m.b_name }} / {{ m.b2_name }}</span>
                 {% else %}
                   {{ m.a_name }} {{ level_badge(participant_level(tournament, m.a_id)) }} <span class="text-slate-400">vs</span> {{ m.b_name }} {{ level_badge(participant_level(tournament, m.b_id)) }}
@@ -493,6 +512,23 @@
               </div>
             </div>
             {% if m.winner %}<div class="text-xs text-amber-700 font-bold mt-0.5">🏆 Winner: {{ winner_slot_label(tournament, m) or m.winner_name }}{% set dur = slot_duration(m) %}{% if dur %} <span class="ml-2 text-slate-600">⏱ {{ dur }}</span>{% endif %}</div>{% endif %}
+            {% if user and user.is_admin and tournament.format == 'doubles' and not m.match_id and not m.winner and r.stage_type != 'pool' %}
+            <details class="mt-1">
+              <summary class="cursor-pointer text-[10px] font-bold text-fuchsia-700">Override teams</summary>
+              <form hx-post="/tournaments/{{ tournament.tournament_id }}/rounds/{{ r.round_num }}/pairs/{{ m.slot }}/set-teams"
+                    hx-target="#tournament-body" hx-swap="innerHTML" class="mt-1 flex items-center gap-1 flex-wrap">
+                {% set ka = ([m.a_id, m.a2_id] | join(',')) %}{% set kb = ([m.b_id, m.b2_id] | join(',')) %}
+                <select name="team_a" class="rounded border border-fuchsia-200 px-1 py-0.5 text-xs">
+                  {% for o in team_options(tournament) %}<option value="{{ o.key }}" {{ 'selected' if o.key.split(',') | sort == ka.split(',') | sort else '' }}>{{ o.label }}</option>{% endfor %}
+                </select>
+                <span class="text-[10px] text-slate-500">vs</span>
+                <select name="team_b" class="rounded border border-fuchsia-200 px-1 py-0.5 text-xs">
+                  {% for o in team_options(tournament) %}<option value="{{ o.key }}" {{ 'selected' if o.key.split(',') | sort == kb.split(',') | sort else '' }}>{{ o.label }}</option>{% endfor %}
+                </select>
+                <button class="px-2 py-0.5 rounded bg-fuchsia-600 hover:bg-fuchsia-700 text-white text-[10px] font-bold">Save</button>
+              </form>
+            </details>
+            {% endif %}
             {% if user and user.is_admin %}
             <form hx-post="/tournaments/{{ tournament.tournament_id }}/rounds/{{ r.round_num }}/pairs/{{ m.slot }}/table"
                   hx-target="#tournament-body" hx-swap="innerHTML"

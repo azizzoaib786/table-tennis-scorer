@@ -4021,6 +4021,124 @@ def start_pair_match(request: Request, tournament_id: str, round_num: int, slot:
     return RedirectResponse(f"/matches/{match_id}", status_code=303)
 
 
+def _team_options(t: Dict[str, Any]) -> List[Dict[str, str]]:
+    """All doubles teams of a tournament as {"key": "id1,id2", "label": team_name}."""
+    groups: Dict[str, List[Dict[str, Any]]] = {}
+    for p in t.get("participants") or []:
+        tn = re.sub(r"\s+", " ", p.get("team_name") or "").strip()
+        if tn:
+            groups.setdefault(tn.lower(), []).append(p)
+    out = []
+    for members in groups.values():
+        if len(members) != 2:
+            continue
+        members = sorted(members, key=lambda p: not p.get("is_primary"))
+        out.append({"key": f"{members[0]['id']},{members[1]['id']}",
+                    "label": members[0].get("team_name") or members[0]["name"]})
+    out.sort(key=lambda x: x["label"].lower())
+    return out
+
+
+templates.env.globals["team_options"] = _team_options
+
+
+def _fmt_hm(minutes: int) -> str:
+    return f"{(minutes // 60) % 24:02d}:{minutes % 60:02d}"
+
+
+@app.post("/tournaments/{tournament_id}/rounds/{round_num}/generate-top16", response_class=HTMLResponse)
+def generate_top16(request: Request, tournament_id: str, round_num: int,
+                   start_time: str = Form("11:15"), slot_minutes: int = Form(15),
+                   per_slot: int = Form(4)):
+    """Admin: build the Top-16 knockout (K1..K8) from the qualifier ranking:
+    seed 1 v 16, 2 v 15 ... 8 v 9. The first `per_slot` matches start at
+    `start_time`, the next batch `slot_minutes` later, and so on, on tables
+    1..per_slot. Honours the manual order/in/out overrides of the qualifiers.
+    Refused once any match in the round has started."""
+    user, t = check_tournament_access(request, tournament_id)
+    rounds = t.get("rounds", [])
+    target_round = next((r for r in rounds if int(r.get("round_num", 0)) == int(round_num)), None)
+    if not target_round:
+        raise HTTPException(404, "Round not found")
+    if target_round.get("stage_type") == "pool":
+        raise HTTPException(400, "Pick a knockout round")
+    if any(not _slot_untouched(s) for s in target_round.get("matches", [])):
+        raise HTTPException(400, "A match in this round has already started")
+    seeds = _seeding(t)["seeds"][:16]
+    if len(seeds) < 16:
+        raise HTTPException(400, f"Need 16 qualifiers, only {len(seeds)} available")
+    m = re.fullmatch(r"\s*(\d{1,2}):(\d{2})\s*", start_time or "")
+    if not m or int(m.group(1)) > 23 or int(m.group(2)) > 59:
+        raise HTTPException(400, "Start time must be HH:MM")
+    base = int(m.group(1)) * 60 + int(m.group(2))
+    slot_minutes = max(1, int(slot_minutes))
+    per_slot = max(1, min(int(per_slot), _tournament_num_tables(t)))
+    by_id = {p["id"]: p for p in t.get("participants", [])}
+    matches = []
+    for i in range(8):
+        a, b = seeds[i], seeds[15 - i]
+        if len(a["members"]) != 2 or len(b["members"]) != 2:
+            raise HTTPException(400, "Top-16 knockouts are for doubles teams")
+        start = base + (i // per_slot) * slot_minutes
+        matches.append({
+            "slot": i + 1, "match_type": "doubles", "match_label": f"K{i + 1}",
+            "seed_a": a["seed"], "seed_b": b["seed"],
+            "a_id": a["members"][0], "a_name": by_id[a["members"][0]]["name"],
+            "a2_id": a["members"][1], "a2_name": by_id[a["members"][1]]["name"],
+            "b_id": b["members"][0], "b_name": by_id[b["members"][0]]["name"],
+            "b2_id": b["members"][1], "b2_name": by_id[b["members"][1]]["name"],
+            "table_number": (i % per_slot) + 1,
+            "sched_start": _fmt_hm(start), "sched_end": _fmt_hm(start + slot_minutes),
+            "match_id": "", "winner": "", "winner_name": "",
+        })
+    target_round["matches"] = matches
+    update_tournament(tournament_id, "SET rounds = :r", {":r": rounds})
+    return templates.TemplateResponse("partials/tournament_body.html", {
+        "request": request, "user": user, "tournament": must_tournament(tournament_id),
+        "roster": list_roster(),
+        "flash": "Top-16 knockouts created: K1-K8 (1v16 ... 8v9).",
+    })
+
+
+@app.post("/tournaments/{tournament_id}/rounds/{round_num}/pairs/{slot}/set-teams", response_class=HTMLResponse)
+def set_pair_teams(request: Request, tournament_id: str, round_num: int, slot: int,
+                   team_a: str = Form(...), team_b: str = Form(...)):
+    """Admin override: choose the two teams of a not-yet-started match. The
+    match name, table and time stay; seed numbers follow the qualifier ranking."""
+    user, t = check_tournament_access(request, tournament_id)
+    rounds = t.get("rounds", [])
+    target_round = next((r for r in rounds if int(r.get("round_num", 0)) == int(round_num)), None)
+    pair = next((m for m in (target_round or {}).get("matches", []) if int(m.get("slot", 0)) == int(slot)), None)
+    if not pair:
+        raise HTTPException(404, "Pair not found")
+    if not _slot_untouched(pair):
+        raise HTTPException(400, "Match already started - cannot change teams")
+    options = {o["key"]: o["label"] for o in _team_options(t)}
+    if team_a not in options or team_b not in options or team_a == team_b:
+        raise HTTPException(400, "Pick two different teams")
+    a_ids, b_ids = team_a.split(","), team_b.split(",")
+    for other in target_round.get("matches", []):
+        if other is pair:
+            continue
+        clash = _slot_ids(other) & set(a_ids + b_ids)
+        if clash:
+            raise HTTPException(400, "A chosen team is already playing another match in this round")
+    by_id = {p["id"]: p for p in t.get("participants", [])}
+    for side, ids in (("a", a_ids), ("b", b_ids)):
+        pair[f"{side}_id"], pair[f"{side}_name"] = ids[0], by_id[ids[0]]["name"]
+        pair[f"{side}2_id"], pair[f"{side}2_name"] = ids[1], by_id[ids[1]]["name"]
+    pair["match_type"] = "doubles"
+    seed_of = {frozenset(s["members"]): s["seed"] for s in _seeding(t)["seeds"]}
+    pair["seed_a"] = seed_of.get(frozenset(a_ids), "")
+    pair["seed_b"] = seed_of.get(frozenset(b_ids), "")
+    update_tournament(tournament_id, "SET rounds = :r", {":r": rounds})
+    return templates.TemplateResponse("partials/tournament_body.html", {
+        "request": request, "user": user, "tournament": must_tournament(tournament_id),
+        "roster": list_roster(),
+        "flash": f"{pair.get('match_label') or 'Match'}: {options[team_a]} vs {options[team_b]}",
+    })
+
+
 @app.post("/tournaments/{tournament_id}/rounds/{round_num}/pairs/{slot}/walkover", response_class=HTMLResponse)
 def set_pair_walkover(request: Request, tournament_id: str, round_num: int, slot: int,
                       winner: str = Form(...), a_points: str = Form(""), b_points: str = Form("")):
@@ -4104,6 +4222,9 @@ def _build_rounds_view(t: Dict[str, Any]) -> List[Dict[str, Any]]:
                 "match_id": mid,
                 "round_num": int(r.get("round_num", 0)),
                 "round_name": r.get("name", ""),
+                "match_label": pair.get("match_label", ""),
+                "seed_a": pair.get("seed_a", ""),
+                "seed_b": pair.get("seed_b", ""),
                 "table_number": int(pair.get("table_number") or 0),
                 "sched_start": pair.get("sched_start", ""),
                 "sched_end": pair.get("sched_end", ""),
@@ -4179,6 +4300,7 @@ def update_tournament_config(request: Request, tournament_id: str,
 
 
 _TV_STAGES = {
+    "top16": "Top 16 - Knockouts",
     "top8": "Top 8 - Quarter Finals",
     "top4": "Top 4 - Semi Finals",
     "finals": "Finals",
@@ -4189,6 +4311,8 @@ def _tv_stage_match(stage: str, r: Dict[str, Any]) -> bool:
     low = (r.get("name") or "").lower()
     if r.get("stage_type") == "pool":
         return False
+    if stage == "top16":
+        return "16" in low
     if stage == "top8":
         return "quarter" in low
     if stage == "top4":
@@ -4209,6 +4333,12 @@ def live_tournament_tv_stage(request: Request, tournament_id: str, stage: str):
     rounds = [r for r in _build_rounds_view(t)
               if _tv_stage_match(stage, {"name": r["name"], "stage_type": r["stage_type"]})]
     biggest = max((len(r["matches"]) for r in rounds), default=1)
+    if stage == "top16":
+        rows = [m for r in rounds for m in r["matches"]]
+        rows.sort(key=lambda x: (x.get("sched_start") or "99:99", int(x.get("slot", 0) or 0)))
+        return templates.TemplateResponse("tv_schedule.html", {
+            "request": request, "tournament": t, "rows": rows, "stage_title": _TV_STAGES[stage],
+        })
     return templates.TemplateResponse("tv_stage.html", {
         "request": request,
         "tournament": t,

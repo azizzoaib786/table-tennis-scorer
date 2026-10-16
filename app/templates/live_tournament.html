@@ -124,9 +124,9 @@
                 </div>
                 <div class="mt-1 font-bold text-emerald-900 truncate">
                   {% if is_doubles %}
-                    {{ side_team(tournament, m, 'a') }}
+                    {% if m.match_label %}<span class="text-indigo-700">{{ m.match_label }}</span> &middot; {% endif %}{% if m.seed_a %}<span class="text-xs text-indigo-600">T{{ m.seed_a }}</span> {% endif %}{{ side_team(tournament, m, 'a') }}
                     <span class="text-slate-400">vs</span>
-                    {{ side_team(tournament, m, 'b') }}
+                    {% if m.seed_b %}<span class="text-xs text-indigo-600">T{{ m.seed_b }}</span> {% endif %}{{ side_team(tournament, m, 'b') }}
                   {% else %}
                     {{ m.a_name }} <span class="text-slate-400">vs</span> {{ m.b_name }}
                   {% endif %}

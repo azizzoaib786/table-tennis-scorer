@@ -1,0 +1,70 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1"/>
+    <title>{{ tournament.name }} — {{ stage_title }}</title>
+    <style>
+      * { box-sizing: border-box; margin: 0; padding: 0; }
+      html, body { height: 100%; background: #0b1e3f; color: #0f2a55;
+                   font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; overflow: hidden; }
+      #app { height: 100vh; display: flex; flex-direction: column; padding: 1.4vmin; gap: 1vmin; }
+      h1 { text-align: center; color: #fff; font-size: clamp(16px, 3.2vmin, 44px); font-weight: 800; }
+      h1 small { display: block; color: #93c5fd; font-size: .5em; font-weight: 600; }
+      #board { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: .8vmin; }
+      .row { flex: 1; min-height: 0; display: grid; grid-template-columns: 22% 14% 1fr; gap: .8vmin; }
+      .row > div { display: flex; align-items: center; justify-content: center; text-align: center; border-radius: 1vmin;
+                   background: #eaf3ff; font-weight: 800; font-size: clamp(14px, 3.6vmin, 52px); padding: 0 1vmin; }
+      .row > .time { background: #cfe3fb; }
+      .head > div { background: #123a73; color: #fff; font-size: clamp(11px, 2.2vmin, 30px); letter-spacing: .05em; }
+      .fixture { gap: 1.2vmin; flex-wrap: wrap; }
+      .t { color: #1d4ed8; font-weight: 900; }
+      .vs { color: #64748b; font-weight: 700; font-size: .7em; }
+      .win { color: #047857; }
+      .lose { color: #94a3b8; text-decoration: line-through; text-decoration-thickness: .2vmin; }
+      .live { background: #fee2e2 !important; }
+      .pill { background: #ef4444; color: #fff; border-radius: 999px; padding: 0 .6em; font-size: .55em; animation: pulse 1.4s infinite; }
+      @keyframes pulse { 50% { opacity: .55; } }
+      .empty { flex: 1; display: flex; align-items: center; justify-content: center; color: #93c5fd; font-size: 3vmin; font-weight: 700; }
+      footer { text-align: center; color: #93c5fd; font-size: clamp(10px, 1.6vmin, 20px); font-weight: 600; }
+      footer a { color: #fff; text-decoration: none; }
+    </style>
+  </head>
+  <body>
+    {% macro side(m, s) -%}
+      {%- set won = m.winner and m.winner|lower == s -%}
+      {%- set lost = m.winner and m.winner|lower != s -%}
+      <span class="{{ 'win' if won else ('lose' if lost else '') }}">{% if m['seed_' ~ s] %}<span class="t">T{{ m['seed_' ~ s] }}</span> {% endif %}{{ side_team(tournament, m, s) }}</span>
+    {%- endmacro %}
+    <div id="app">
+      <h1>🏆 {{ tournament.name }}<small>{{ stage_title }}</small></h1>
+      <div id="board">
+        <div class="row head"><div>🕘 START TIME</div><div>🏓 MATCH</div><div>👥 FIXTURE</div></div>
+        {% for m in rows %}
+        <div class="row">
+          <div class="time">{{ m.sched_start|t12 if m.sched_start else '-' }}</div>
+          <div>{{ m.match_label or ('M' ~ m.slot) }}</div>
+          <div class="fixture {{ 'live' if m.status == 'live' else '' }}">
+            {{ side(m, 'a') }} <span class="vs">vs</span> {{ side(m, 'b') }}
+            {% if m.status == 'live' %}<span class="pill">LIVE {{ m.a_games }}-{{ m.b_games }}</span>{% endif %}
+          </div>
+        </div>
+        {% else %}
+        <div class="empty">Top 16 knockouts not drawn yet</div>
+        {% endfor %}
+      </div>
+      <footer>🏓 Table Tennis Scorer • Created with ❤️ by FCC, developed by <a href="https://azizzoaib.com" target="_blank" rel="noopener">Aziz Zoaib</a></footer>
+    </div>
+    <script>
+      let fails = 0;
+      setInterval(async () => {
+        try {
+          const r = await fetch(location.href, { cache: "no-store" });
+          const doc = new DOMParser().parseFromString(await r.text(), "text/html");
+          document.getElementById("board").innerHTML = doc.getElementById("board").innerHTML;
+          fails = 0;
+        } catch (e) { if (++fails >= 3) location.reload(); }
+      }, 2000);
+    </script>
+  </body>
+</html>
