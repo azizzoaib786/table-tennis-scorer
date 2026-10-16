@@ -1,19 +1,21 @@
-{# Three logos, identical size, centered in one row. #}
-<div class="mb-3 sm:mb-4">
-  <div class="flex items-center justify-center gap-3 sm:gap-6">
+{# Three equal logo tiles spanning the same width as the page card, styled like the card (white, rounded, emerald border). #}
+<div class="mb-3 sm:mb-4 grid grid-cols-3 gap-2 sm:gap-3">
+  <div class="bg-white rounded-2xl border-2 border-emerald-200 shadow-md aspect-square flex items-center justify-center p-2 sm:p-3">
     <img src="/static/ansports-logo.png"
          alt="AN Sports Dubai"
-         class="h-20 w-20 sm:h-28 sm:w-28 object-contain drop-shadow"
+         class="max-h-full max-w-full object-contain"
          onerror="this.style.display='none'"/>
-
+  </div>
+  <div class="bg-white rounded-2xl border-2 border-emerald-200 shadow-md aspect-square flex items-center justify-center p-2 sm:p-3">
     <img src="/static/tournament-logo.png"
          alt="Milad Table Tennis 2026"
-         class="h-20 w-20 sm:h-28 sm:w-28 object-contain drop-shadow"
+         class="max-h-full max-w-full object-contain"
          onerror="this.style.display='none'"/>
-
+  </div>
+  <div class="bg-white rounded-2xl border-2 border-emerald-200 shadow-md aspect-square flex items-center justify-center p-2 sm:p-3">
     <img src="/static/fcc-logo.png"
          alt="Friends Cricket Club"
-         class="h-20 w-20 sm:h-28 sm:w-28 object-contain drop-shadow"
+         class="max-h-full max-w-full object-contain"
          onerror="this.style.display='none'"/>
   </div>
 </div>
