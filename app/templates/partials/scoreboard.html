@@ -187,9 +187,9 @@
   {% endif %}
 
   <!-- Edit players (only for scorer, only before any point) -->
-  {% if user and state.total_points == 0 and not state.match_winner %}
+  {% if user and not state.match_winner %}
   <details class="bg-white rounded-2xl border-2 border-slate-200 p-4">
-    <summary class="cursor-pointer text-sm font-bold text-slate-700">✏️ Edit players / link to accounts</summary>
+    <summary class="cursor-pointer text-sm font-bold text-slate-700">✏️ Edit players / start serve</summary>
     <form
       hx-post="/matches/{{ match.match_id }}/players"
       hx-target="#scoreboard"
@@ -240,6 +240,54 @@
       </div>
       <button class="w-full rounded-xl bg-emerald-600 text-white font-bold py-2">Save</button>
     </form>
+
+    {% if state.total_points == 0 or state.a_score + state.b_score == 0 %}
+    <form
+      hx-post="/matches/{{ match.match_id }}/game-start-serve"
+      hx-target="#scoreboard"
+      hx-swap="innerHTML"
+      class="mt-4 space-y-3 rounded-xl border-2 border-sky-200 bg-sky-50 p-3">
+      <div class="flex items-center justify-between gap-2">
+        <div class="text-sm font-bold text-sky-800">🎯 Select next game start serve</div>
+        <div class="text-[10px] font-bold uppercase tracking-wide text-sky-600">Locked after 1st point</div>
+      </div>
+      <div class="grid grid-cols-2 gap-2">
+        <div>
+          <label class="block text-[11px] font-bold text-slate-600 uppercase tracking-wide mb-1">Game</label>
+          <select name="game_num" class="w-full rounded-lg border-2 border-slate-200 px-3 py-2 text-sm">
+            <option value="{{ state.current_game_num }}">Current game ({{ state.current_game_num }})</option>
+            <option value="{{ state.current_game_num + 1 }}">Next game ({{ state.current_game_num + 1 }})</option>
+          </select>
+        </div>
+        <div>
+          <label class="block text-[11px] font-bold text-slate-600 uppercase tracking-wide mb-1">Serve</label>
+          <select name="game_start_server" class="w-full rounded-lg border-2 border-slate-200 px-3 py-2 text-sm">
+            <option value="A" {% if match.get('game_start_server', match.get('first_server', 'A')) == 'A' %}selected{% endif %}>Team A</option>
+            <option value="B" {% if match.get('game_start_server', match.get('first_server', 'A')) == 'B' %}selected{% endif %}>Team B</option>
+          </select>
+        </div>
+      </div>
+      {% if state.is_doubles %}
+      <div class="grid grid-cols-2 gap-2">
+        <div>
+          <label class="block text-[11px] font-bold text-slate-600 uppercase tracking-wide mb-1">Server side</label>
+          <select name="game_start_server_side" class="w-full rounded-lg border-2 border-slate-200 px-3 py-2 text-sm">
+            <option value="1" {% if match.get('game_start_server_side', match.get('first_server_side', 1)) == 1 %}selected{% endif %}>Side 1</option>
+            <option value="2" {% if match.get('game_start_server_side', match.get('first_server_side', 1)) == 2 %}selected{% endif %}>Side 2</option>
+          </select>
+        </div>
+        <div>
+          <label class="block text-[11px] font-bold text-slate-600 uppercase tracking-wide mb-1">Receiver side</label>
+          <select name="game_start_receiver_side" class="w-full rounded-lg border-2 border-slate-200 px-3 py-2 text-sm">
+            <option value="1" {% if match.get('game_start_receiver_side', match.get('first_receiver_side', 1)) == 1 %}selected{% endif %}>Side 1</option>
+            <option value="2" {% if match.get('game_start_receiver_side', match.get('first_receiver_side', 1)) == 2 %}selected{% endif %}>Side 2</option>
+          </select>
+        </div>
+      </div>
+      {% endif %}
+      <button class="w-full rounded-xl bg-sky-600 text-white font-bold py-2">Save next-game serve</button>
+    </form>
+    {% endif %}
   </details>
   {% endif %}
 </div>

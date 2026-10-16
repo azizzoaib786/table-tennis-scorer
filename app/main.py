@@ -174,6 +174,21 @@ def normalize_match_start_settings(match_type: str,
     }
 
 
+def can_edit_match_start_settings(match: dict, state: dict, game_num: Optional[int] = None) -> bool:
+    """Allow pre-game edits only while the selected game is still at 0-0."""
+    if not match or not state or state.get("match_winner"):
+        return False
+    target_game = int(game_num if game_num is not None else state.get("current_game_num", 1))
+    current_game = int(state.get("current_game_num", 1))
+    if target_game < 1:
+        return False
+    if target_game < current_game:
+        return False
+    if target_game > current_game:
+        return True
+    return (int(state.get("a_score", 0)) + int(state.get("b_score", 0))) == 0
+
+
 def _advancing_participants(tournament: dict, round_num: int) -> list:
     """Participants eligible to be picked in round `round_num`.
     Round 1 → all participants.
@@ -1920,6 +1935,45 @@ def undo_point(request: Request, match_id: str):
     return templates.TemplateResponse("partials/scoreboard.html", {
         "request": request, "user": user, "match": match2, "state": state2,
         "lock": _lock_state(match2, user), "flash": flash,
+    })
+
+
+@app.post("/matches/{match_id}/game-start-serve", response_class=HTMLResponse)
+def set_game_start_serve(request: Request, match_id: str,
+                       game_num: int = Form(1),
+                       game_start_server: str = Form("A"),
+                       game_start_server_side: int = Form(1),
+                       game_start_receiver_side: int = Form(1)):
+    user, match = check_match_access(request, match_id)
+    state = compute_state(match, list_events(match_id))
+    if not can_edit_match_start_settings(match, state, game_num):
+        return templates.TemplateResponse("partials/scoreboard.html", {
+            "request": request, "user": user, "match": match, "state": state,
+            "flash": "⚠️ Serve selection is locked once the game has started.",
+        })
+
+    start_cfg = normalize_match_start_settings(
+        match.get("match_type", "singles"),
+        game_start_server or match.get("first_server", "A"),
+        game_start_server_side if int(game_start_server_side) in (1, 2) else 1,
+        game_start_receiver_side if int(game_start_receiver_side) in (1, 2) else 1,
+    )
+    update_match(
+        match_id,
+        "SET game_start_server_game_num = :gnum, game_start_server = :gs, "
+        "game_start_server_side = :gss, game_start_receiver_side = :grs",
+        {
+            ":gnum": int(game_num),
+            ":gs": start_cfg["first_server"],
+            ":gss": int(start_cfg["first_server_side"]),
+            ":grs": int(start_cfg["first_receiver_side"]),
+        },
+    )
+    match2 = must_match(match_id)
+    state2 = compute_state(match2, list_events(match_id))
+    return templates.TemplateResponse("partials/scoreboard.html", {
+        "request": request, "user": user, "match": match2, "state": state2,
+        "flash": "✅ Starting serve updated for Game " + str(game_num),
     })
 
 

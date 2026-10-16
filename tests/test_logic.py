@@ -10,7 +10,7 @@ Every rule from the README's "Table tennis rules implemented" section
 is exercised here at least once.
 """
 from app.logic import compute_state, player_name
-from app.main import _score_rule_defaults_for_round, normalize_match_start_settings
+from app.main import _score_rule_defaults_for_round, can_edit_match_start_settings, normalize_match_start_settings
 
 
 # ── Fixtures (plain dicts, no fixtures framework needed) ───────────────────────
@@ -137,6 +137,17 @@ def test_match_start_settings_are_normalized_before_start():
         first_receiver_side=0,
     )
     assert value == {"first_server": "B", "first_server_side": 1, "first_receiver_side": 1}
+
+
+def test_game_start_serve_can_be_changed_before_first_point_only():
+    match = dict(SINGLES_BASE)
+    state = compute_state(match, [])
+    assert can_edit_match_start_settings(match, state, 1) is True
+    assert can_edit_match_start_settings(match, state, 2) is True
+
+    state = compute_state(match, [_pt("A")])
+    assert can_edit_match_start_settings(match, state, 1) is False
+    assert can_edit_match_start_settings(match, state, 2) is True
 
 
 # ── Doubles ───────────────────────────────────────────────────────────────────

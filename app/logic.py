@@ -67,6 +67,39 @@ def _other_side(side: int) -> int:
     return 2 if side == 1 else 1
 
 
+def _game_start_server(match: dict, game_num: int, is_doubles: bool):
+    """Resolve the starting server for the current game, honoring a per-game override.
+
+    The override is stored on the match for the specific game number so scorers/admins
+    can choose the start serve at the beginning of each set/game, while the match keeps
+    default alternating serve order after that point.
+    """
+    first_server: str = match.get("first_server", "A")
+    first_server_side = int(match.get("first_server_side", 1)) if is_doubles else None
+    first_receiver_side = int(match.get("first_receiver_side", 1)) if is_doubles else None
+
+    override_game = int(match.get("game_start_server_game_num") or 0)
+    override_server = (match.get("game_start_server") or "").strip().upper()
+    if override_game == game_num and override_server in ("A", "B"):
+        server = override_server
+    else:
+        server = first_server if game_num % 2 == 1 else _other_team(first_server)
+
+    if is_doubles:
+        if override_game == game_num:
+            server_side = int(match.get("game_start_server_side", first_server_side or 1))
+            receiver_side = int(match.get("game_start_receiver_side", first_receiver_side or 1))
+        else:
+            if game_num % 2 == 1:
+                server_side = first_server_side
+                receiver_side = first_receiver_side
+            else:
+                server_side = _other_side(first_server_side) if first_server_side else 1
+                receiver_side = _other_side(first_receiver_side) if first_receiver_side else 1
+        return server, server_side, _other_team(server), receiver_side
+    return server, None, _other_team(server), None
+
+
 def compute_state(match: dict, all_events: List[dict]) -> dict:
     """Derive full match state from the event log."""
     points_to_win = int(match.get("points_to_win", 11))
@@ -95,10 +128,7 @@ def compute_state(match: dict, all_events: List[dict]) -> dict:
     game_num = 1
     match_winner: Optional[str] = None
 
-    server = first_server
-    server_side: Optional[int] = first_server_side
-    receiver: str = _other_team(server)
-    receiver_side: Optional[int] = first_receiver_side
+    server, server_side, receiver, receiver_side = _game_start_server(match, game_num, is_doubles)
     points_since_serve_change = 0
     ends_swapped_this_game = False
     point_history: List[dict] = []
@@ -228,21 +258,7 @@ def compute_state(match: dict, all_events: List[dict]) -> dict:
             b_score = 0
             points_since_serve_change = 0
             ends_swapped_this_game = False
-
-            # Singles/doubles: server team alternates each game.
-            if game_num % 2 == 0:
-                server = _other_team(first_server)
-            else:
-                server = first_server
-            receiver = _other_team(server)
-            if is_doubles:
-                # Alternate the sub-side each game so all four players share serving duty.
-                if (game_num - 1) % 2 == 0:
-                    server_side = first_server_side
-                    receiver_side = first_receiver_side
-                else:
-                    server_side = _other_side(first_server_side) if first_server_side else 1
-                    receiver_side = _other_side(first_receiver_side) if first_receiver_side else 1
+            server, server_side, receiver, receiver_side = _game_start_server(match, game_num, is_doubles)
 
     is_deuce = (
         a_score >= points_to_win - 1
