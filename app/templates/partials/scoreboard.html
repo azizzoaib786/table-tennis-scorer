@@ -188,8 +188,15 @@
 
   <!-- Edit players (only for scorer, only before any point) -->
   {% if user and not state.match_winner %}
-  <details class="bg-white rounded-2xl border-2 border-slate-200 p-4">
-    <summary class="cursor-pointer text-sm font-bold text-slate-700">✏️ Edit players / who serves</summary>
+  {% set at_start = (state.a_score + state.b_score) == 0 %}
+  {% if not at_start %}
+  <div class="bg-slate-100 rounded-2xl border-2 border-slate-200 p-4 text-sm font-bold text-slate-400 select-none">
+    🔒 Players / who serves — locked while the game is in progress
+    <div class="text-xs font-normal mt-0.5">Opens again at the start of the next game.</div>
+  </div>
+  {% else %}
+  <details open class="bg-white rounded-2xl border-2 border-slate-200 p-4">
+    <summary class="cursor-pointer text-sm font-bold text-slate-700">✏️ {{ 'Players / who serves first' if state.total_points == 0 else 'Game ' ~ state.current_game_num ~ ': who serves first?' }}</summary>
     {% set dbl = state.is_doubles %}
     {% set pick_names = {
       'A1': match.player_a,
@@ -247,15 +254,14 @@
       <button class="w-full rounded-xl bg-emerald-600 text-white font-bold py-2">Save</button>
     </form>
 
-    {% elif state.a_score + state.b_score == 0 %}
-    {# Between games (0-0 in a later game): who serves this game #}
+    {% else %}
+    {# Start of a later game (0-0): who serves this game #}
     <form
       hx-post="/matches/{{ match.match_id }}/game-start-serve"
       hx-target="#scoreboard"
       hx-swap="innerHTML"
       class="mt-3 space-y-3">
       <input type="hidden" name="game_num" value="{{ state.current_game_num }}"/>
-      <div class="text-sm font-bold text-sky-800">🎯 Game {{ state.current_game_num }}: who serves first?</div>
       <div class="grid {% if dbl %}grid-cols-2{% else %}grid-cols-1{% endif %} gap-2">
         <div>
           <label class="block text-[11px] font-bold text-slate-600 uppercase tracking-wide mb-1">Serves first</label>
@@ -275,8 +281,6 @@
       <button class="w-full rounded-xl bg-sky-600 text-white font-bold py-2">Save</button>
     </form>
 
-    {% else %}
-    <div class="mt-3 text-xs text-slate-500">Players and serve can only be changed before the first point of a game.</div>
     {% endif %}
     <script>
       // Receiver must be on the other team: show only the opposing team's players.
@@ -291,6 +295,7 @@
       };
     </script>
   </details>
+  {% endif %}
   {% endif %}
 </div>
 
