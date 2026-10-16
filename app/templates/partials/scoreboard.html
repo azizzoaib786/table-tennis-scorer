@@ -189,105 +189,107 @@
   <!-- Edit players (only for scorer, only before any point) -->
   {% if user and not state.match_winner %}
   <details class="bg-white rounded-2xl border-2 border-slate-200 p-4">
-    <summary class="cursor-pointer text-sm font-bold text-slate-700">✏️ Edit players / start serve</summary>
+    <summary class="cursor-pointer text-sm font-bold text-slate-700">✏️ Edit players / who serves</summary>
+    {% set dbl = state.is_doubles %}
+    {% set pick_names = {
+      'A1': match.player_a,
+      'A2': match.get('player_a2', '') or 'Partner (Team A)',
+      'B1': match.player_b,
+      'B2': match.get('player_b2', '') or 'Partner (Team B)'} %}
+    {% set cur_server = state.server or match.get('first_server', 'A') %}
+    {% set cur_server_pick = cur_server ~ ((state.server_side or 1) if dbl else 1) %}
+    {% set cur_recv_pick = ('B' if cur_server == 'A' else 'A') ~ (state.receiver_side or 1) %}
+    {% set pick_keys = ['A1', 'A2', 'B1', 'B2'] if dbl else ['A1', 'B1'] %}
+
+    {% if state.total_points == 0 %}
+    {# Before the first point: names + who serves/receives first #}
     <form
       hx-post="/matches/{{ match.match_id }}/players"
       hx-target="#scoreboard"
       hx-swap="innerHTML"
-      class="mt-3 space-y-2">
-      <div class="grid grid-cols-2 gap-2">
-        <input name="player_a" value="{{ match.player_a }}" placeholder="Player A name" class="rounded-lg border-2 border-slate-200 px-3 py-2 text-sm"/>
-        <input name="player_b" value="{{ match.player_b }}" placeholder="Player B name" class="rounded-lg border-2 border-slate-200 px-3 py-2 text-sm"/>
+      class="mt-3 space-y-3">
+      <div>
+        <div class="text-[11px] font-bold text-slate-600 uppercase tracking-wide mb-1">Players</div>
+        <div class="grid grid-cols-2 gap-2">
+          <input name="player_a" value="{{ match.player_a }}" placeholder="Team A - player 1" class="rounded-lg border-2 border-slate-200 px-3 py-2 text-sm"/>
+          <input name="player_b" value="{{ match.player_b }}" placeholder="Team B - player 1" class="rounded-lg border-2 border-slate-200 px-3 py-2 text-sm"/>
+          {% if dbl %}
+          <input name="player_a2" value="{{ match.get('player_a2', '') }}" placeholder="Team A - player 2" class="rounded-lg border-2 border-slate-200 px-3 py-2 text-sm"/>
+          <input name="player_b2" value="{{ match.get('player_b2', '') }}" placeholder="Team B - player 2" class="rounded-lg border-2 border-slate-200 px-3 py-2 text-sm"/>
+          {% endif %}
+        </div>
       </div>
-      {% if state.is_doubles %}
-      <div class="grid grid-cols-2 gap-2">
-        <input name="player_a2" value="{{ match.get('player_a2', '') }}" placeholder="Partner A2 name" class="rounded-lg border-2 border-slate-200 px-3 py-2 text-sm"/>
-        <input name="player_b2" value="{{ match.get('player_b2', '') }}" placeholder="Partner B2 name" class="rounded-lg border-2 border-slate-200 px-3 py-2 text-sm"/>
-      </div>
-      {% endif %}
-      <div class="grid grid-cols-2 gap-2">
+
+      <div class="grid {% if dbl %}grid-cols-2{% else %}grid-cols-1{% endif %} gap-2">
         <div>
-          <label class="block text-[11px] font-bold text-slate-600 uppercase tracking-wide mb-1">Starting serve</label>
-          <select name="first_server" class="w-full rounded-lg border-2 border-slate-200 px-3 py-2 text-sm">
-            <option value="A" {% if match.get('first_server', 'A') == 'A' %}selected{% endif %}>Team A</option>
-            <option value="B" {% if match.get('first_server', 'A') == 'B' %}selected{% endif %}>Team B</option>
+          <label class="block text-[11px] font-bold text-slate-600 uppercase tracking-wide mb-1">Serves first</label>
+          <select name="server_pick" onchange="ttPickReceiver(this.form)" class="w-full rounded-lg border-2 border-slate-200 px-3 py-2 text-sm">
+            {% for k in pick_keys %}<option value="{{ k }}" {% if k == cur_server_pick %}selected{% endif %}>{{ pick_names[k] }}</option>{% endfor %}
           </select>
         </div>
-        {% if state.is_doubles %}
+        {% if dbl %}
         <div>
-          <label class="block text-[11px] font-bold text-slate-600 uppercase tracking-wide mb-1">Server side</label>
-          <select name="first_server_side" class="w-full rounded-lg border-2 border-slate-200 px-3 py-2 text-sm">
-            <option value="1" {% if match.get('first_server_side', 1) == 1 %}selected{% endif %}>Side 1</option>
-            <option value="2" {% if match.get('first_server_side', 1) == 2 %}selected{% endif %}>Side 2</option>
+          <label class="block text-[11px] font-bold text-slate-600 uppercase tracking-wide mb-1">Receives first</label>
+          <select name="receiver_pick" class="w-full rounded-lg border-2 border-slate-200 px-3 py-2 text-sm">
+            {% for k in pick_keys %}<option value="{{ k }}" {% if k == cur_recv_pick %}selected{% endif %} {% if k[0] == cur_server %}hidden disabled{% endif %}>{{ pick_names[k] }}</option>{% endfor %}
           </select>
         </div>
         {% endif %}
       </div>
-      {% if state.is_doubles %}
-      <div class="grid grid-cols-1 gap-2">
-        <div>
-          <label class="block text-[11px] font-bold text-slate-600 uppercase tracking-wide mb-1">First receiver side</label>
-          <select name="first_receiver_side" class="w-full rounded-lg border-2 border-slate-200 px-3 py-2 text-sm">
-            <option value="1" {% if match.get('first_receiver_side', 1) == 1 %}selected{% endif %}>Side 1</option>
-            <option value="2" {% if match.get('first_receiver_side', 1) == 2 %}selected{% endif %}>Side 2</option>
-          </select>
+
+      <details class="text-xs text-slate-500">
+        <summary class="cursor-pointer">Link player accounts (optional)</summary>
+        <div class="grid grid-cols-2 gap-2 mt-2">
+          <input name="player_a_id" value="{{ match.get('player_a_id', '') }}" placeholder="Player A user_id" class="rounded-lg border-2 border-slate-200 px-3 py-2 text-xs font-mono"/>
+          <input name="player_b_id" value="{{ match.get('player_b_id', '') }}" placeholder="Player B user_id" class="rounded-lg border-2 border-slate-200 px-3 py-2 text-xs font-mono"/>
         </div>
-      </div>
-      {% endif %}
-      <div class="grid grid-cols-2 gap-2">
-        <input name="player_a_id" value="{{ match.get('player_a_id', '') }}" placeholder="Player A user_id (optional)" class="rounded-lg border-2 border-slate-200 px-3 py-2 text-xs font-mono"/>
-        <input name="player_b_id" value="{{ match.get('player_b_id', '') }}" placeholder="Player B user_id (optional)" class="rounded-lg border-2 border-slate-200 px-3 py-2 text-xs font-mono"/>
-      </div>
+      </details>
       <button class="w-full rounded-xl bg-emerald-600 text-white font-bold py-2">Save</button>
     </form>
 
-    {% if state.total_points == 0 or state.a_score + state.b_score == 0 %}
+    {% elif state.a_score + state.b_score == 0 %}
+    {# Between games (0-0 in a later game): who serves this game #}
     <form
       hx-post="/matches/{{ match.match_id }}/game-start-serve"
       hx-target="#scoreboard"
       hx-swap="innerHTML"
-      class="mt-4 space-y-3 rounded-xl border-2 border-sky-200 bg-sky-50 p-3">
-      <div class="flex items-center justify-between gap-2">
-        <div class="text-sm font-bold text-sky-800">🎯 Select next game start serve</div>
-        <div class="text-[10px] font-bold uppercase tracking-wide text-sky-600">Locked after 1st point</div>
+      class="mt-3 space-y-3">
+      <input type="hidden" name="game_num" value="{{ state.current_game_num }}"/>
+      <div class="text-sm font-bold text-sky-800">🎯 Game {{ state.current_game_num }}: who serves first?</div>
+      <div class="grid {% if dbl %}grid-cols-2{% else %}grid-cols-1{% endif %} gap-2">
+        <div>
+          <label class="block text-[11px] font-bold text-slate-600 uppercase tracking-wide mb-1">Serves first</label>
+          <select name="server_pick" onchange="ttPickReceiver(this.form)" class="w-full rounded-lg border-2 border-slate-200 px-3 py-2 text-sm">
+            {% for k in pick_keys %}<option value="{{ k }}" {% if k == cur_server_pick %}selected{% endif %}>{{ pick_names[k] }}</option>{% endfor %}
+          </select>
+        </div>
+        {% if dbl %}
+        <div>
+          <label class="block text-[11px] font-bold text-slate-600 uppercase tracking-wide mb-1">Receives first</label>
+          <select name="receiver_pick" class="w-full rounded-lg border-2 border-slate-200 px-3 py-2 text-sm">
+            {% for k in pick_keys %}<option value="{{ k }}" {% if k == cur_recv_pick %}selected{% endif %} {% if k[0] == cur_server %}hidden disabled{% endif %}>{{ pick_names[k] }}</option>{% endfor %}
+          </select>
+        </div>
+        {% endif %}
       </div>
-      <div class="grid grid-cols-2 gap-2">
-        <div>
-          <label class="block text-[11px] font-bold text-slate-600 uppercase tracking-wide mb-1">Game</label>
-          <select name="game_num" class="w-full rounded-lg border-2 border-slate-200 px-3 py-2 text-sm">
-            <option value="{{ state.current_game_num }}">Current game ({{ state.current_game_num }})</option>
-            <option value="{{ state.current_game_num + 1 }}">Next game ({{ state.current_game_num + 1 }})</option>
-          </select>
-        </div>
-        <div>
-          <label class="block text-[11px] font-bold text-slate-600 uppercase tracking-wide mb-1">Serve</label>
-          <select name="game_start_server" class="w-full rounded-lg border-2 border-slate-200 px-3 py-2 text-sm">
-            <option value="A" {% if match.get('game_start_server', match.get('first_server', 'A')) == 'A' %}selected{% endif %}>Team A</option>
-            <option value="B" {% if match.get('game_start_server', match.get('first_server', 'A')) == 'B' %}selected{% endif %}>Team B</option>
-          </select>
-        </div>
-      </div>
-      {% if state.is_doubles %}
-      <div class="grid grid-cols-2 gap-2">
-        <div>
-          <label class="block text-[11px] font-bold text-slate-600 uppercase tracking-wide mb-1">Server side</label>
-          <select name="game_start_server_side" class="w-full rounded-lg border-2 border-slate-200 px-3 py-2 text-sm">
-            <option value="1" {% if match.get('game_start_server_side', match.get('first_server_side', 1)) == 1 %}selected{% endif %}>Side 1</option>
-            <option value="2" {% if match.get('game_start_server_side', match.get('first_server_side', 1)) == 2 %}selected{% endif %}>Side 2</option>
-          </select>
-        </div>
-        <div>
-          <label class="block text-[11px] font-bold text-slate-600 uppercase tracking-wide mb-1">Receiver side</label>
-          <select name="game_start_receiver_side" class="w-full rounded-lg border-2 border-slate-200 px-3 py-2 text-sm">
-            <option value="1" {% if match.get('game_start_receiver_side', match.get('first_receiver_side', 1)) == 1 %}selected{% endif %}>Side 1</option>
-            <option value="2" {% if match.get('game_start_receiver_side', match.get('first_receiver_side', 1)) == 2 %}selected{% endif %}>Side 2</option>
-          </select>
-        </div>
-      </div>
-      {% endif %}
-      <button class="w-full rounded-xl bg-sky-600 text-white font-bold py-2">Save next-game serve</button>
+      <button class="w-full rounded-xl bg-sky-600 text-white font-bold py-2">Save</button>
     </form>
+
+    {% else %}
+    <div class="mt-3 text-xs text-slate-500">Players and serve can only be changed before the first point of a game.</div>
     {% endif %}
+    <script>
+      // Receiver must be on the other team: show only the opposing team's players.
+      window.ttPickReceiver = window.ttPickReceiver || function (f) {
+        var r = f.receiver_pick; if (!r) return;
+        var s = f.server_pick.value.charAt(0), other = s === 'A' ? 'B' : 'A', side = r.value.charAt(1) || '1';
+        for (var i = 0; i < r.options.length; i++) {
+          var same = r.options[i].value.charAt(0) === s;
+          r.options[i].disabled = same; r.options[i].hidden = same;
+        }
+        r.value = other + side;
+      };
+    </script>
   </details>
   {% endif %}
 </div>

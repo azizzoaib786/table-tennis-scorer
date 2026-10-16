@@ -175,6 +175,12 @@ def normalize_match_start_settings(match_type: str,
     }
 
 
+def _parse_pick(pick: str) -> Optional[tuple]:
+    """'A1' -> ('A', 1): team A / side 1 (first player). Anything else -> None."""
+    m = re.fullmatch(r"([AB])([12])", (pick or "").strip().upper())
+    return (m.group(1), int(m.group(2))) if m else None
+
+
 def can_edit_match_start_settings(match: dict, state: dict, game_num: Optional[int] = None) -> bool:
     """Allow pre-game edits only while the selected game is still at 0-0."""
     if not match or not state or state.get("match_winner"):
@@ -1995,9 +2001,16 @@ def set_game_start_serve(request: Request, match_id: str,
                        game_num: int = Form(1),
                        game_start_server: str = Form("A"),
                        game_start_server_side: int = Form(1),
-                       game_start_receiver_side: int = Form(1)):
+                       game_start_receiver_side: int = Form(1),
+                       server_pick: str = Form(""),
+                       receiver_pick: str = Form("")):
     user, match = check_match_access(request, match_id)
     state = compute_state(match, list_events(match_id))
+    sp, rp = _parse_pick(server_pick), _parse_pick(receiver_pick)
+    if sp:
+        game_start_server, game_start_server_side = sp
+    if rp:
+        game_start_receiver_side = rp[1]
     if not can_edit_match_start_settings(match, state, game_num):
         return scoreboard_response(request, user, match, state,
                                    "⚠️ Serve selection is locked once the game has started.")
@@ -2031,9 +2044,15 @@ def set_players(request: Request, match_id: str,
                 player_a2: str = Form(""), player_b2: str = Form(""),
                 player_a_id: str = Form(""), player_b_id: str = Form(""),
                 first_server: str = Form(""), first_server_side: int = Form(0),
-                first_receiver_side: int = Form(0)):
+                first_receiver_side: int = Form(0),
+                server_pick: str = Form(""), receiver_pick: str = Form("")):
     user, match = check_match_access(request, match_id)
     state = compute_state(match, list_events(match_id))
+    sp, rp = _parse_pick(server_pick), _parse_pick(receiver_pick)
+    if sp:
+        first_server, first_server_side = sp
+    if rp:
+        first_receiver_side = rp[1]
     if state.get("total_points") or state.get("match_winner"):
         return scoreboard_response(request, user, match, state,
                                    "⚠️ Start settings are frozen once the match has started.")
