@@ -153,10 +153,10 @@
     <div class="text-xs font-bold uppercase tracking-wider text-slate-500">Next Serve</div>
     <div class="mt-1 text-2xl font-bold text-emerald-900 flex items-center justify-center gap-2">
       <span class="text-3xl">🏓</span>
-      <span>{{ (team_a if state.server == 'A' and team_a else (team_b if state.server == 'B' and team_b else (state.server_name or (match.player_a if state.server == 'A' else match.player_b)))) }}</span>
+      <span>{{ state.server_name or (match.player_a if state.server == 'A' else match.player_b) }}</span>
     </div>
     {% if state.is_doubles and state.receiver_name %}
-      <div class="mt-1 text-sm text-slate-600">↳ receiving: <span class="font-bold text-emerald-800">{{ team_b if state.server == 'A' and team_b else (team_a if state.server == 'B' and team_a else state.receiver_name) }}</span></div>
+      <div class="mt-1 text-sm text-slate-600">↳ receiving: <span class="font-bold text-emerald-800">{{ state.receiver_name }}</span></div>
       <div class="text-[10px] text-fuchsia-600 mt-0.5">Doubles: diagonal serve • partners alternate shots</div>
     {% endif %}
     {% if state.side_change_alert %}
