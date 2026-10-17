@@ -136,7 +136,7 @@
         hx-swap="innerHTML"
         class="flex-1 rounded-xl bg-white border-2 border-amber-300 text-amber-700 font-bold py-3 shadow-sm">🌐 Let</button>
       {% endif %}
-      {% if state.match_winner and (user.is_admin or user.user_id == match.user_id) %}
+      {% if state.match_winner and user.is_admin %}
       <form method="post" action="/matches/{{ match.match_id }}/delete" class="flex-1">
         <button onclick="return confirm('Delete this match permanently?')" class="w-full rounded-xl bg-gradient-to-r from-rose-500 to-red-600 text-white font-bold py-3 shadow-md">🗑️ Delete Match</button>
       </form>

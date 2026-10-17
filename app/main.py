@@ -2110,7 +2110,7 @@ def set_players(request: Request, match_id: str,
 
 @app.post("/matches/{match_id}/delete")
 def delete_own_match(request: Request, match_id: str):
-    user, match = check_match_access(request, match_id)
+    require_admin(request)
     delete_match(match_id)
     return RedirectResponse("/", status_code=303)
 
