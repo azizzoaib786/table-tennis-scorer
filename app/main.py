@@ -354,8 +354,8 @@ templates.env.globals["by_time"] = lambda ms: sorted(
 
 
 def _final_popup(match: Dict[str, Any], state: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-    """Winner pop-up data for a finished tournament final (Cup Final / Plate
-    Final / 3rd-place playoff). None for every other match."""
+    """Champions pop-up data for a finished main tournament Final only.
+    None for every other match, including plate / 3rd-place rounds."""
     winner = state.get("match_winner")
     tid = match.get("tournament_id")
     if winner not in ("A", "B") or not tid:
@@ -369,8 +369,8 @@ def _final_popup(match: Dict[str, Any], state: Dict[str, Any]) -> Optional[Dict[
         return None
     name = (rnd.get("name") or "").strip()
     low = name.lower()
-    is_final = (("final" in low and "semi" not in low and "quarter" not in low)
-                or rnd.get("stage_type") == "plate")
+    is_final = ("final" in low and "semi" not in low and "quarter" not in low
+                and "plate" not in low and rnd.get("stage_type") != "plate")
     if not is_final:
         return None
     sfx = "2" if match.get("match_type") == "doubles" else None
