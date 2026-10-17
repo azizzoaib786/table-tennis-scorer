@@ -180,6 +180,29 @@
         <label class="text-xs font-bold text-teal-900">Qualifiers per group</label>
         <input type="number" name="qualify_per_group" min="1" max="32" value="{{ tournament.qualify_per_group or 4 }}" class="mt-1 w-full rounded-xl border-2 border-teal-200 px-3 py-2"/>
       </div>
+      {% set g = global_settings() %}
+      {% set t_cap = tournament.get('hard_cap_at') %}
+      {% set t_ds = tournament.get('deciding_side_change_at') %}
+      <div>
+        <label class="text-xs font-bold text-teal-900">Serve changes every N points</label>
+        <input type="number" name="service_interval" min="1" max="10" value="{{ tournament.get('service_interval') or g.service_interval }}" class="mt-1 w-full rounded-xl border-2 border-teal-200 px-3 py-2"/>
+        <p class="text-[10px] text-teal-700 mt-0.5">Table tennis = 2</p>
+      </div>
+      <div>
+        <label class="text-xs font-bold text-teal-900">Serve changes every N points at deuce</label>
+        <input type="number" name="deuce_interval" min="1" max="10" value="{{ tournament.get('deuce_interval') or g.deuce_interval }}" class="mt-1 w-full rounded-xl border-2 border-teal-200 px-3 py-2"/>
+        <p class="text-[10px] text-teal-700 mt-0.5">Table tennis = 1</p>
+      </div>
+      <div>
+        <label class="text-xs font-bold text-teal-900">Change ends in deciding game at</label>
+        <input type="number" name="deciding_side_change_at" min="0" max="50" value="{{ t_ds if t_ds is not none else g.deciding_side_change_at }}" class="mt-1 w-full rounded-xl border-2 border-teal-200 px-3 py-2"/>
+        <p class="text-[10px] text-teal-700 mt-0.5">ITTF = 5 &bull; 0 = off</p>
+      </div>
+      <div>
+        <label class="text-xs font-bold text-teal-900">Hard cap (pools / plate)</label>
+        <input type="number" name="hard_cap_at" min="0" max="99" value="{{ t_cap if t_cap is not none else (g.hard_cap_at or 15) }}" class="mt-1 w-full rounded-xl border-2 border-teal-200 px-3 py-2"/>
+        <p class="text-[10px] text-teal-700 mt-0.5">First to this score wins outright. Must be above points to win; 0 = off. Knockouts never use a cap.</p>
+      </div>
       <p class="col-span-2 text-[11px] text-teal-800">Applies to matches started after saving. Group ranking: wins, then NRR.</p>
       <button class="col-span-2 rounded-lg bg-gradient-to-r from-teal-500 to-emerald-600 text-white font-bold px-3 py-2 text-sm">💾 Save settings</button>
     </form>

@@ -593,6 +593,7 @@ def _busy_tables(t: Dict[str, Any]) -> Dict[int, str]:
 
 
 templates.env.globals["busy_tables"] = _busy_tables
+templates.env.globals["global_settings"] = get_settings
 
 
 def _winning_side_label(match: Dict[str, Any], tournament: Optional[Dict[str, Any]],
@@ -773,13 +774,14 @@ def must_tournament(tournament_id: str) -> Dict[str, Any]:
     return t
 
 
-def _score_rule_defaults_for_round(round_data: dict, cfg: dict) -> dict:
+def _score_rule_defaults_for_round(round_data: dict, cfg: dict, tournament: Optional[dict] = None) -> dict:
     """Default match rules by stage:
-    - league / pool / group rounds: hard cap at 15, win by 2 once deuce hits 10-10
+    - league / pool / group rounds: hard cap (tournament setting, else global), win by 2 once deuce hits 10-10
     - knockout rounds: no hard cap; continue until someone leads by 2 after deuce
 
     Round-specific hard_cap_at values still override this default. A value of 0
-    is treated as 'use the default for this stage'.
+    is treated as 'use the default for this stage'. A tournament-level
+    hard_cap_at of 0 means no cap for non-knockout rounds.
     """
     stage_type = str(round_data.get("stage_type") or "").lower()
     round_hard_cap = round_data.get("hard_cap_at")
@@ -790,6 +792,10 @@ def _score_rule_defaults_for_round(round_data: dict, cfg: dict) -> dict:
         }
     if stage_type == "knockout":
         return {"hard_cap_enabled": False, "hard_cap_at": 0}
+    t_cap = (tournament or {}).get("hard_cap_at")
+    if t_cap is not None:
+        t_cap = int(t_cap)
+        return {"hard_cap_enabled": t_cap > 0, "hard_cap_at": t_cap}
     cap = int(cfg.get("hard_cap_at", 15) or 15)
     return {"hard_cap_enabled": True, "hard_cap_at": cap}
 
@@ -4183,7 +4189,7 @@ def start_pair_match(request: Request, tournament_id: str, round_num: int, slot:
     else:
         name = f"{t['name']} — {target_round['name']}: {pair['a_name']} vs {pair['b_name']}"
 
-    hard_cap_cfg = _score_rule_defaults_for_round(target_round, cfg)
+    hard_cap_cfg = _score_rule_defaults_for_round(target_round, cfg, t)
     item = {
         "match_id": match_id,
         "name": name,
@@ -4194,7 +4200,7 @@ def start_pair_match(request: Request, tournament_id: str, round_num: int, slot:
         "points_to_win": int(target_round.get("points_to_win") or t.get("points_to_win", cfg["default_points_to_win"])),
         "service_interval": int(t.get("service_interval", cfg["service_interval"])),
         "deuce_interval": int(t.get("deuce_interval", cfg["deuce_interval"])),
-        "deciding_side_change_at": int(cfg.get("deciding_side_change_at", 5)),
+        "deciding_side_change_at": int(t.get("deciding_side_change_at", cfg.get("deciding_side_change_at", 5))),
         # Snapshot hard-cap rule onto the tournament match too — mirrors
         # /matches so global settings changes don't retro-alter live matches.
         "hard_cap_enabled": hard_cap_cfg["hard_cap_enabled"],
@@ -4563,7 +4569,11 @@ def update_tournament_config(request: Request, tournament_id: str,
                              best_of: int = Form(...),
                              points_to_win: int = Form(...),
                              num_tables: int = Form(...),
-                             qualify_per_group: int = Form(...)):
+                             qualify_per_group: int = Form(...),
+                             service_interval: int = Form(...),
+                             deuce_interval: int = Form(...),
+                             deciding_side_change_at: int = Form(...),
+                             hard_cap_at: int = Form(...)):
     """Admin/owner: per-tournament scoring + structure settings. Affects matches
     started after the change (running matches keep their own values)."""
     check_tournament_access(request, tournament_id)
@@ -4573,11 +4583,19 @@ def update_tournament_config(request: Request, tournament_id: str,
         raise HTTPException(400, "points_to_win must be at least 5")
     if num_tables < 1 or qualify_per_group < 1:
         raise HTTPException(400, "tables and qualifiers must be at least 1")
+    if service_interval < 1 or deuce_interval < 1:
+        raise HTTPException(400, "serve change intervals must be at least 1")
+    if deciding_side_change_at < 0:
+        raise HTTPException(400, "change-ends score must be 0 (off) or more")
+    if hard_cap_at < 0 or (hard_cap_at and hard_cap_at <= points_to_win):
+        raise HTTPException(400, "hard cap must be 0 (off) or higher than points to win")
     update_tournament(
         tournament_id,
-        "SET best_of = :b, points_to_win = :p, num_tables = :n, qualify_per_group = :q",
+        "SET best_of = :b, points_to_win = :p, num_tables = :n, qualify_per_group = :q, "
+        "service_interval = :si, deuce_interval = :di, deciding_side_change_at = :ds, hard_cap_at = :hc",
         {":b": int(best_of), ":p": int(points_to_win), ":n": int(num_tables),
-         ":q": int(qualify_per_group)},
+         ":q": int(qualify_per_group), ":si": int(service_interval), ":di": int(deuce_interval),
+         ":ds": int(deciding_side_change_at), ":hc": int(hard_cap_at)},
     )
     return RedirectResponse(f"/tournaments/{tournament_id}", status_code=303)
 
