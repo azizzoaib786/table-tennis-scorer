@@ -29,7 +29,6 @@
       {% include "partials/tv_logos.html" %}
       <div class="ptitle"><span id="qtitle">Top {{ sd.seeds|length }} Qualifiers</span>
         <small>{{ tournament.name }} • Ranked by wins, then NRR (net rally-point difference){% if sd.manual %} • Manually adjusted{% endif %}</small>
-        <span class="pstatus {{ 'final' if sd.ready else '' }}">{{ 'FINAL' if sd.ready else 'PROVISIONAL – POOLS IN PROGRESS' }}</span>
       </div>
       <div id="board" style="--cols: 2">
         {% set half = ((sd.seeds|length) + 1) // 2 %}
