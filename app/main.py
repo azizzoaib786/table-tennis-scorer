@@ -529,11 +529,36 @@ templates.env.globals["seeding"] = _seeding
 
 
 def _build_table_board(t: Dict[str, Any], rounds_view: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    """Per-table view: live match(es), the next pending matches, last result."""
-    tables: Dict[int, Dict[str, Any]] = {
-        i: {"table": i, "live": [], "next": [], "last": None}
-        for i in range(1, _tournament_num_tables(t) + 1)
-    }
+    """Per-table view: live match(es), the next pending matches, last result.
+
+    Pool / league rounds show every configured table. From the Top 16 round
+    onwards (Top 16, quarters, semis, finals) only the tables used by the current
+    knockout stage are returned, so unused tables drop off the board and come back
+    if a later round uses them."""
+    def _tn(m: Dict[str, Any]) -> int:
+        try:
+            return int(m.get("table_number") or 0)
+        except (TypeError, ValueError):
+            return 0
+
+    def _is_late(r: Dict[str, Any]) -> bool:
+        low = (r.get("name") or "").strip().lower()
+        return r.get("stage_type") != "pool" and not low.startswith(("pool", "league", "group"))
+
+    def _unfinished(r: Dict[str, Any]) -> bool:
+        return any(_tn(m) >= 1 and m["status"] != "finished" for m in r.get("matches", []))
+
+    late = [r for r in rounds_view if _is_late(r) and any(_tn(m) >= 1 for m in r.get("matches", []))]
+    earlier_running = any(_unfinished(r) for r in rounds_view if not _is_late(r))
+    scoped = bool(late) and not earlier_running
+    if scoped:
+        tables: Dict[int, Dict[str, Any]] = {}
+        rounds_view = [r for r in late if _unfinished(r)] or late
+    else:
+        tables = {
+            i: {"table": i, "live": [], "next": [], "last": None}
+            for i in range(1, _tournament_num_tables(t) + 1)
+        }
     for r in rounds_view:
         for m in r.get("matches", []):
             try:

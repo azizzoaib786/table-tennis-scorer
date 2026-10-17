@@ -79,7 +79,7 @@
       <div class="ptitle">Live Tables
         <small>{{ tournament.name }} • Best of {{ tournament.best_of }} games • First to {{ tournament.points_to_win }} points</small>
       </div>
-      <div id="board" style="--cols: {{ 3 if table_board|length > 4 else 2 }}">
+      <div id="board" style="--cols: {{ 3 if table_board|length > 4 else (1 if table_board|length < 2 else 2) }}">
         {% for tb in table_board %}
         {% set m = tb.live[0] if tb.live else none %}
         {% set n = tb.next[0] if tb.next else none %}
@@ -134,6 +134,7 @@
           const r = await fetch(location.href, { cache: "no-store" });
           const doc = new DOMParser().parseFromString(await r.text(), "text/html");
           document.getElementById("board").innerHTML = doc.getElementById("board").innerHTML;
+          document.getElementById("board").setAttribute("style", doc.getElementById("board").getAttribute("style") || "");
           fails = 0;
         } catch (e) { if (++fails >= 3) location.reload(); }
       }, 2000);
