@@ -805,6 +805,11 @@ def _score_rule_defaults_for_round(round_data: dict, cfg: dict, tournament: Opti
         }
     if stage_type in ("knockout", "plate"):
         return {"hard_cap_enabled": False, "hard_cap_at": 0}
+    if stage_type != "pool":
+        # Rounds seeded by name have no stage_type; Final / Semi / Quarter / Plate are knockouts.
+        low = str(round_data.get("name") or "").lower()
+        if any(w in low for w in ("final", "semi", "quarter", "plate", "knockout")):
+            return {"hard_cap_enabled": False, "hard_cap_at": 0}
     t_cap = (tournament or {}).get("hard_cap_at")
     if t_cap is not None:
         t_cap = int(t_cap)
