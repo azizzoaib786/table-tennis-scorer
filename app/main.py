@@ -553,7 +553,10 @@ def _build_table_board(t: Dict[str, Any], rounds_view: List[Dict[str, Any]]) -> 
     scoped = bool(late) and not earlier_running
     if scoped:
         tables: Dict[int, Dict[str, Any]] = {}
-        rounds_view = [r for r in late if _unfinished(r)] or late
+        # Current round = unfinished knockout round(s); once all are finished keep showing the
+        # latest one (its winners) until the next round gets tables assigned.
+        latest = max(late, key=lambda r: int(r.get("round_num", 0)))
+        rounds_view = [r for r in late if _unfinished(r)] or [latest]
     else:
         tables = {
             i: {"table": i, "live": [], "next": [], "last": None}
@@ -578,6 +581,13 @@ def _build_table_board(t: Dict[str, Any], rounds_view: List[Dict[str, Any]]) -> 
     for entry in tables.values():
         entry["next"].sort(key=lambda x: (x.get("sched_start") or "99:99", x.get("slot", 0)))
         entry["next"] = entry["next"][:2]
+        entry["show_last"] = False
+    if scoped and any(w in (r.get("name") or "").lower() for r in rounds_view
+                      for w in ("quarter", "semi", "final")):
+        # Quarters onwards: a finished match's winner stays in its table box until the
+        # next round starts (then that round replaces this one and the winner clears).
+        for entry in tables.values():
+            entry["show_last"] = True
     return [tables[k] for k in sorted(tables)]
 
 

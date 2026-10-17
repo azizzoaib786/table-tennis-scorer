@@ -34,6 +34,13 @@
                font-size: max(10px, 1.6vmin); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
       .tfoot b { color: #0f2a55; }
       .tfoot .ok { color: #047857; }
+      .tfoot.lastwin { background: #ecfdf5; border-top-color: #a7f3d0; }
+      .twin { flex: 1; display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; gap: .8vmin; }
+      .twin .lbl { color: #047857; font-weight: 900; letter-spacing: .08em; font-size: max(12px, 2.2vmin); }
+      .twin .wname { font-size: max(18px, 4.4vmin); font-weight: 900; color: #065f46; line-height: 1.1; }
+      .twin .wsc { font-size: max(11px, 2vmin); font-weight: 700; color: #475f86; }
+      .twin .wsc b { color: #0f2a55; }
+      .tfoot .lwr { color: #64748b; font-weight: 800; text-transform: uppercase; font-size: .85em; margin-left: .4em; }
     </style>
   </head>
   <body>
@@ -108,6 +115,16 @@
               {% if n.sched_start %}<div class="when">{{ n.sched_start }}</div>{% endif %}
             </div>
           </div>
+          {% elif tb.show_last and tb.last %}
+          {% set lw = tb.last %}{% set wa = (lw.winner == 'A') %}
+          <div class="tbody">
+            <div class="tmeta">{{ tag(lw) }}<span>Final result</span></div>
+            <div class="twin">
+              <div class="lbl">🏆 WINNER</div>
+              <div class="wname">{{ winner_slot_label(tournament, lw) or lw.winner_name }}</div>
+              <div class="wsc">{{ names(lw, 'a') }} <b>{{ lw.a_games }}–{{ lw.b_games }}</b> {{ names(lw, 'b') }}</div>
+            </div>
+          </div>
           {% else %}
           <div class="tbody"><div class="tnone">No matches queued</div></div>
           {% endif %}
@@ -115,8 +132,11 @@
           <div class="tfoot">Next: <b>{{ names(n, 'a') }}</b> vs <b>{{ names(n, 'b') }}</b>{% if n.sched_start %} • {{ n.sched_start }}{% endif %}</div>
           {% elif tb.next|length > 1 %}
           <div class="tfoot">Then: <b>{{ names(tb.next[1], 'a') }}</b> vs <b>{{ names(tb.next[1], 'b') }}</b>{% if tb.next[1].sched_start %} • {{ tb.next[1].sched_start }}{% endif %}</div>
-          {% elif tb.last %}
+          {% elif tb.last and not tb.show_last %}
           <div class="tfoot"><span class="ok">✅ {{ winner_slot_label(tournament, tb.last) or tb.last.winner_name }}</span>{% if tb.last.game_scores %}{% set wa = (tb.last.winner == 'A') %} ({{ tb.last.a_games if wa else tb.last.b_games }}–{{ tb.last.b_games if wa else tb.last.a_games }}){% endif %}</div>
+          {% endif %}
+          {% if tb.show_last and tb.last and (m or n) %}
+          <div class="tfoot lastwin"><span class="ok">🏆 Last winner:</span> <b>{{ winner_slot_label(tournament, tb.last) or tb.last.winner_name }}</b>{% if tb.last.game_scores %}{% set wa = (tb.last.winner == 'A') %} ({{ tb.last.a_games if wa else tb.last.b_games }}–{{ tb.last.b_games if wa else tb.last.a_games }}){% endif %} <span class="lwr">{{ tb.last.round_name }}</span></div>
           {% endif %}
         </div>
         {% else %}
