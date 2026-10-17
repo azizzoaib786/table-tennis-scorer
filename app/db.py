@@ -218,7 +218,8 @@ def search_users(query: str, exclude_ids: Optional[List[str]] = None) -> List[Di
 
 
 def update_user_stats(user_id: str, match_won: bool, games_played: int,
-                       games_won: int, points_scored: int) -> None:
+                       games_won: int, points_scored: int, sign: int = 1) -> None:
+    """Add (sign=1) or take back (sign=-1) one match's worth of stats."""
     users.update_item(
         Key={"user_id": user_id},
         UpdateExpression=(
@@ -226,11 +227,11 @@ def update_user_stats(user_id: str, match_won: bool, games_played: int,
             "stat_games_played :gp, stat_games_won :gw, stat_points_scored :ps"
         ),
         ExpressionAttributeValues={
-            ":one": 1,
-            ":mw": 1 if match_won else 0,
-            ":gp": int(games_played),
-            ":gw": int(games_won),
-            ":ps": int(points_scored),
+            ":one": sign,
+            ":mw": sign if match_won else 0,
+            ":gp": sign * int(games_played),
+            ":gw": sign * int(games_won),
+            ":ps": sign * int(points_scored),
         },
     )
 

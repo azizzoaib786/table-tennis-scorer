@@ -1010,6 +1010,11 @@ def match_context(request: Request, match: Dict[str, Any], user: Optional[Dict[s
                   flash: Optional[str] = None) -> Dict[str, Any]:
     ev = list_events(match["match_id"])
     state = compute_state(match, ev)
+    if (user and state.get("match_winner") and match.get("stats_recorded")
+            and match.get("winner") != state["match_winner"]):
+        # Heal a result recorded before an undo (older matches).
+        _finalize_stats_if_needed(match, state)
+        match = must_match(match["match_id"])
     return {
         "request": request,
         "user": user,
@@ -1896,27 +1901,56 @@ def live_match(request: Request, match_id: str):
 
 
 # ── Matches: scoring actions ──────────────────────────────────────────────────
-def _finalize_stats_if_needed(match: dict, state: dict) -> None:
-    if not state.get("match_winner") or match.get("stats_recorded"):
+def _unrecord_match_result(match: dict) -> None:
+    """Take back a recorded result (winner, player stats, tournament slot) so the
+    match can be finished again after an undo."""
+    for e in match.get("stats_snapshot") or []:
+        update_user_stats(e["uid"], bool(e["won"]), int(e["gp"]), int(e["gw"]), int(e["pts"]), sign=-1)
+    update_match(match["match_id"], "SET stats_recorded = :s REMOVE winner, stats_snapshot",
+                 {":s": False})
+    tid = match.get("tournament_id")
+    t = get_tournament(tid) if tid else None
+    if not t:
         return
+    rounds = t.get("rounds", [])
+    for r in rounds:
+        if int(r.get("round_num", 0)) != int(match.get("round_num", 0)):
+            continue
+        for slot in r.get("matches", []):
+            if slot.get("match_id") == match["match_id"]:
+                slot["winner"] = ""
+                slot["winner_name"] = ""
+                for k in ("a_points", "b_points", "ended_at", "duration_sec"):
+                    slot.pop(k, None)
+                break
+    _fill_from_sources(t)
+    update_tournament(tid, "SET rounds = :r", {":r": rounds})
+
+
+def _finalize_stats_if_needed(match: dict, state: dict) -> None:
+    mw = state.get("match_winner")
+    if not mw:
+        return
+    if match.get("stats_recorded"):
+        if match.get("winner") == mw:
+            return
+        # Recorded winner is stale (e.g. match was undone and finished the other way).
+        _unrecord_match_result(match)
     a_id = match.get("player_a_id")
     b_id = match.get("player_b_id")
     a_points = sum(g["a"] for g in state["games"])
     b_points = sum(g["b"] for g in state["games"])
+    snapshot = []
     if a_id:
-        update_user_stats(a_id,
-                          match_won=(state["match_winner"] == "A"),
-                          games_played=state["a_games"] + state["b_games"],
-                          games_won=state["a_games"],
-                          points_scored=a_points)
+        snapshot.append({"uid": a_id, "won": mw == "A", "gp": state["a_games"] + state["b_games"],
+                         "gw": state["a_games"], "pts": a_points})
     if b_id:
-        update_user_stats(b_id,
-                          match_won=(state["match_winner"] == "B"),
-                          games_played=state["a_games"] + state["b_games"],
-                          games_won=state["b_games"],
-                          points_scored=b_points)
-    update_match(match["match_id"], "SET stats_recorded = :s, winner = :w",
-                 {":s": True, ":w": state["match_winner"]})
+        snapshot.append({"uid": b_id, "won": mw == "B", "gp": state["a_games"] + state["b_games"],
+                         "gw": state["b_games"], "pts": b_points})
+    for e in snapshot:
+        update_user_stats(e["uid"], e["won"], e["gp"], e["gw"], e["pts"])
+    update_match(match["match_id"], "SET stats_recorded = :s, winner = :w, stats_snapshot = :snap",
+                 {":s": True, ":w": mw, ":snap": snapshot})
 
     # If part of a tournament, record the winner in the tournament's bracket
     tid = match.get("tournament_id")
@@ -2011,6 +2045,10 @@ def undo_point(request: Request, match_id: str):
     deleted = delete_last_event(match_id)
     match2 = must_match(match_id)
     state2 = compute_state(match2, list_events(match_id))
+    if match2.get("stats_recorded") and not state2.get("match_winner"):
+        # The undo re-opened a finished match: drop the recorded winner everywhere.
+        _unrecord_match_result(match2)
+        match2 = must_match(match_id)
     flash = "↩️ Last point undone." if deleted else "⚠️ No points to undo."
     return scoreboard_response(request, user, match2, state2, flash)
 
