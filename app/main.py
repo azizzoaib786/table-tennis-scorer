@@ -196,6 +196,20 @@ def can_edit_match_start_settings(match: dict, state: dict, game_num: Optional[i
     return (int(state.get("a_score", 0)) + int(state.get("b_score", 0))) == 0
 
 
+def _winner_ids(matches: list) -> set:
+    """Participant ids on the winning side of each decided match."""
+    ids = set()
+    for m in matches or []:
+        w = m.get("winner")  # "A" or "B" once the match is scored
+        if w not in ("A", "B"):
+            continue
+        s = w.lower()
+        ids.add(m.get(f"{s}_id"))
+        if m.get("match_type") == "doubles" and m.get(f"{s}2_id"):
+            ids.add(m.get(f"{s}2_id"))
+    return ids
+
+
 def _advancing_participants(tournament: dict, round_num: int) -> list:
     """Participants eligible to be picked in round `round_num`.
     Round 1 → all participants.
@@ -237,6 +251,17 @@ def _advancing_participants(tournament: dict, round_num: int) -> list:
         return participants
     if current and current.get("stage_type") in ("pool", "custom"):
         return participants
+    cur_name = str((current or {}).get("name") or "").lower()
+    if current and "final" in cur_name and "semi" not in cur_name and "quarter" not in cur_name:
+        # Final: only the semi-final winners, even if a 3rd-place/plate round
+        # sits between the semis and the final.
+        semi = next((r for r in sorted(rounds, key=lambda r: -int(r.get("round_num", 0)))
+                     if int(r.get("round_num", 0)) < int(round_num)
+                     and r.get("stage_type", "knockout") == "knockout"
+                     and len(r.get("matches") or []) == 2), None)
+        if semi:
+            win_ids = _winner_ids(semi["matches"])
+            return [p for p in participants if p.get("id") in win_ids]
     prev = next((r for r in rounds if int(r.get("round_num", 0)) == int(round_num) - 1), None)
     if not prev:
         return participants
@@ -249,19 +274,7 @@ def _advancing_participants(tournament: dict, round_num: int) -> list:
         return participants
     if prev.get("stage_type") in ("plate", "custom"):
         return participants
-    advancing_ids = set()
-    for m in prev.get("matches", []) or []:
-        w = m.get("winner")  # "A" or "B" once the match is scored
-        if not w:
-            continue
-        if w == "A":
-            advancing_ids.add(m.get("a_id"))
-            if m.get("match_type") == "doubles" and m.get("a2_id"):
-                advancing_ids.add(m.get("a2_id"))
-        elif w == "B":
-            advancing_ids.add(m.get("b_id"))
-            if m.get("match_type") == "doubles" and m.get("b2_id"):
-                advancing_ids.add(m.get("b2_id"))
+    advancing_ids = _winner_ids(prev.get("matches", []))
     if not advancing_ids:
         return participants  # nothing decided yet → don't lock the UI
     return [p for p in participants if p.get("id") in advancing_ids]
