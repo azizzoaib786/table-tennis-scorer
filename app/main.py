@@ -4684,6 +4684,8 @@ def live_tournament_tv_stage(request: Request, tournament_id: str, stage: str):
         return live_tournament_tv_qualifiers(request, tournament_id)
     if stage == "schedule":
         return _render_tv_tournament(request, tournament_id, "schedule")
+    if stage == "top16":
+        return live_tournament_tv_qualifiers(request, tournament_id)
     if stage not in _TV_STAGES:
         raise HTTPException(404, "Unknown stage")
     t = get_tournament(tournament_id)

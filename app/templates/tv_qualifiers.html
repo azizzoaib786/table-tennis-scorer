@@ -6,7 +6,7 @@
     <title>{{ tournament.name }} — Top Qualifiers</title>
     {% include "partials/tv_poster_css.html" %}
     <style>
-      .qr { flex: 1; min-height: 0; display: grid; grid-template-columns: 7vmin 1fr auto auto; align-items: center; gap: 1.2vmin;
+      .qr { flex: 1; min-height: 0; display: grid; grid-template-columns: 7vmin 1fr auto auto auto auto; align-items: center; gap: 1.2vmin;
             padding: .3vmin 1.2vmin; font-weight: 800; color: #0f2a55; }
       .qr + .qr { border-top: .2vmin solid #e2ecfa; }
       .qr.top8 { background: #fff7e0; }
@@ -17,13 +17,18 @@
       .qstat b { display: block; font-size: 1.5em; color: #0f2a55; }
       .qstat b.pos { color: #047857; } .qstat b.neg { color: #dc2626; }
       .qtie { font-size: .55em; background: #f59e0b; color: #111; border-radius: .4em; padding: 0 .4em; margin-left: .4em; vertical-align: middle; }
+      .qman { font-size: .55em; background: #e0e7ff; color: #4338ca; border-radius: .4em; padding: 0 .4em; margin-left: .4em; vertical-align: middle; }
+      .qlvl { font-size: .55em; border-radius: 999px; padding: 0 .5em; margin-left: .4em; vertical-align: middle; border: .2vmin solid; }
+      .qlvl.A { background: #ffe4e6; color: #be123c; border-color: #fda4af; }
+      .qlvl.I { background: #fef3c7; color: #b45309; border-color: #fcd34d; }
+      .qlvl.B { background: #d1fae5; color: #047857; border-color: #6ee7b7; }
     </style>
   </head>
   <body>
     <div id="app">
       {% include "partials/tv_logos.html" %}
       <div class="ptitle"><span id="qtitle">Top {{ sd.seeds|length }} Qualifiers</span>
-        <small>{{ tournament.name }} • Ranked by wins, then NRR (net rally-point difference)</small>
+        <small>{{ tournament.name }} • Ranked by wins, then NRR (net rally-point difference){% if sd.manual %} • Manually adjusted{% endif %}</small>
         <span class="pstatus {{ 'final' if sd.ready else '' }}">{{ 'FINAL' if sd.ready else 'PROVISIONAL – POOLS IN PROGRESS' }}</span>
       </div>
       <div id="board" style="--cols: 2">
@@ -35,8 +40,10 @@
           {% for r in chunk %}
           <div class="qr {{ 'top8' if r.seed <= 8 else '' }}">
             <div class="qseed">{{ r.seed }}</div>
-            <div class="qteam">{{ r.label }}{% if r.tied %}<span class="qtie">TIE</span>{% endif %}<span class="qpool">{{ r.pool }}</span></div>
+            <div class="qteam">{{ r.label }}{% if r.level %}<span class="qlvl {{ r.level[0] }}">{{ r.level[0] }}</span>{% endif %}{% if r.tied %}<span class="qtie">TIE</span>{% endif %}{% if r.manual %}<span class="qman">MANUAL</span>{% endif %}<span class="qpool">{{ r.pool }}</span></div>
             <div class="qstat"><b>{{ r.wins }}</b>W</div>
+            <div class="qstat"><b>{{ r.pf }}</b>PF</div>
+            <div class="qstat"><b>{{ r.pa }}</b>PA</div>
             <div class="qstat"><b class="{{ 'pos' if r.nrr > 0 else ('neg' if r.nrr < 0 else '') }}">{{ '%+d' % r.nrr }}</b>NRR</div>
           </div>
           {% endfor %}
