@@ -777,11 +777,11 @@ def must_tournament(tournament_id: str) -> Dict[str, Any]:
 def _score_rule_defaults_for_round(round_data: dict, cfg: dict, tournament: Optional[dict] = None) -> dict:
     """Default match rules by stage:
     - league / pool / group rounds: hard cap (tournament setting, else global), win by 2 once deuce hits 10-10
-    - knockout rounds: no hard cap; continue until someone leads by 2 after deuce
+    - knockout and plate rounds: no hard cap; continue until someone leads by 2 after deuce
 
     Round-specific hard_cap_at values still override this default. A value of 0
     is treated as 'use the default for this stage'. A tournament-level
-    hard_cap_at of 0 means no cap for non-knockout rounds.
+    hard_cap_at of 0 means no cap for pool/group rounds.
     """
     stage_type = str(round_data.get("stage_type") or "").lower()
     round_hard_cap = round_data.get("hard_cap_at")
@@ -790,7 +790,7 @@ def _score_rule_defaults_for_round(round_data: dict, cfg: dict, tournament: Opti
             "hard_cap_enabled": True,
             "hard_cap_at": int(round_hard_cap),
         }
-    if stage_type == "knockout":
+    if stage_type in ("knockout", "plate"):
         return {"hard_cap_enabled": False, "hard_cap_at": 0}
     t_cap = (tournament or {}).get("hard_cap_at")
     if t_cap is not None:
