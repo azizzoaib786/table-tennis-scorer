@@ -28,7 +28,8 @@
   </details>
   {% endif %}
 
-  <!-- Public live board link -->
+  <!-- Public live board link (admin only; scorers just score) -->
+  {% if user and user.is_admin %}
   <div class="bg-gradient-to-r from-emerald-500 to-teal-600 text-white rounded-2xl shadow-lg p-4 flex items-center justify-between gap-3 flex-wrap">
     <div class="flex items-center gap-2 min-w-0">
       <span class="text-2xl">🌐</span>
@@ -45,6 +46,7 @@
               class="px-3 py-2 rounded-lg bg-white/20 border border-white/40 text-white font-bold text-sm">📋 Copy link</button>
     </div>
   </div>
+  {% endif %}
 
   <!-- Participants -->
   {% if user and user.is_admin %}
