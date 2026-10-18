@@ -42,6 +42,17 @@ def test_pool_still_running_keeps_all_tables_even_if_knockout_assigned():
     assert _tables(rounds) == [1, 2, 3, 4, 5, 6]
 
 
+def test_released_parked_pool_match_does_not_block_knockout_board():
+    parked = {**_m(3, "live"), "table_released": True}
+    rounds = [
+        {"name": "Pluto", "stage_type": "pool", "matches": [_m(1, "finished"), parked]},
+        {"name": "Round of 16", "stage_type": "knockout", "matches": [_m(1, "live"), _m(3, "live"), _m(4)]},
+    ]
+    board = main._build_table_board(T, rounds)
+    assert [e["table"] for e in board] == [1, 3, 4]
+    assert len(next(e for e in board if e["table"] == 3)["live"]) == 1
+
+
 def test_semis_winner_stays_in_box_until_next_round_starts():
     def rnd(num, name, matches):
         return {"round_num": num, "name": name, "stage_type": "knockout", "matches": matches}

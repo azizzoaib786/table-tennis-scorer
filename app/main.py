@@ -549,7 +549,13 @@ def _build_table_board(t: Dict[str, Any], rounds_view: List[Dict[str, Any]]) -> 
         return any(_tn(m) >= 1 and m["status"] != "finished" for m in r.get("matches", []))
 
     late = [r for r in rounds_view if _is_late(r) and any(_tn(m) >= 1 for m in r.get("matches", []))]
-    earlier_running = any(_unfinished(r) for r in rounds_view if not _is_late(r))
+    # A pool match whose table an admin released is parked, so it must not keep the
+    # board in pool mode (and its stale score on the table) once knockouts are running.
+    earlier_running = any(
+        any(_tn(m) >= 1 and m["status"] != "finished" and not m.get("table_released")
+            for m in r.get("matches", []))
+        for r in rounds_view if not _is_late(r)
+    )
     scoped = bool(late) and not earlier_running
     if scoped:
         tables: Dict[int, Dict[str, Any]] = {}
@@ -4606,6 +4612,7 @@ def _build_rounds_view(t: Dict[str, Any]) -> List[Dict[str, Any]]:
                 "seed_a": pair.get("seed_a", ""),
                 "seed_b": pair.get("seed_b", ""),
                 "table_number": int(pair.get("table_number") or 0),
+                "table_released": bool(pair.get("table_released")),
                 "sched_start": pair.get("sched_start", ""),
                 "sched_end": pair.get("sched_end", ""),
                 "final_a": None, "final_b": None,
