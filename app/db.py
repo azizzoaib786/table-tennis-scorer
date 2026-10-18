@@ -41,7 +41,8 @@ def get_match(match_id: str) -> Optional[Dict[str, Any]]:
 
 def list_matches(limit: int = 50) -> List[Dict[str, Any]]:
     resp = matches.scan(Limit=limit)
-    items = resp.get("Items", [])
+    # Skip stub records (e.g. a scorer lock written for a match that was deleted).
+    items = [m for m in resp.get("Items", []) if m.get("created_at") and m.get("name")]
     items.sort(key=lambda x: x.get("created_at", ""), reverse=True)
     return items
 
@@ -52,7 +53,7 @@ def list_matches_by_user(user_id: str, limit: int = 50) -> List[Dict[str, Any]]:
         ExpressionAttributeValues={":uid": user_id},
         Limit=limit,
     )
-    items = resp.get("Items", [])
+    items = [m for m in resp.get("Items", []) if m.get("created_at") and m.get("name")]
     items.sort(key=lambda x: x.get("created_at", ""), reverse=True)
     return items
 
